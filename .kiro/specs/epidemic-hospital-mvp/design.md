@@ -1,5 +1,13 @@
 # Design: epidemic hospital dependency MVP
 
+> **Reconciliation notice (authoritative).** Superseded where it conflicts with
+> `architecture.md`, `docs/mathematical-model.md`, `docs/weekly-state-machine.md`,
+> and `contracts/`. The SEIR+H wording here is replaced by the need-state model
+> (`S+E+I+R=N`, `H_need` auxiliary); allocation/rerouting operate on new-admission
+> requests only with persistent retained cohorts and row-preserving residuals;
+> there are exactly two bounded FDNA passes with the zero-move ⇒ identical
+> before/after invariant. The implementation gate is **CLOSED**.
+
 ## Architecture
 
 Implement a functional pipeline with explicit data contracts and validation at every boundary:

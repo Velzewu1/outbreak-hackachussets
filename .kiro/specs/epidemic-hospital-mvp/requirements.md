@@ -1,5 +1,19 @@
 # Requirements: epidemic hospital dependency MVP
 
+> **Reconciliation notice (authoritative).** This legacy spec predates the
+> architecture reconciliation driven by `Addiotional Info 1.txt`. The
+> authoritative specification is now `architecture.md`,
+> `docs/mathematical-model.md`, `docs/weekly-state-machine.md`, `contracts/`,
+> `docs/integration-plan.md`, `docs/architecture-decisions.md`, and `AGENTS.md`.
+> Where this spec conflicts, those documents win. Key overrides: SEIR conserves
+> `S+E+I+R=N` (no `H` compartment; `H_need` is auxiliary need, not beds);
+> allocation/rerouting act on **new-admission requests only** with persistent
+> retained cohorts; the ledger is `accepted + unmet = need` per origin district
+> (not `served + rerouted + unmet = demand`); exactly two bounded FDNA passes with
+> no feedback; the implementation approval gate is **CLOSED** (documentation
+> only). Requirement 3 below ("S, E, I, R, H") is superseded by the need-state
+> model.
+
 ## 1. Reproducible project setup
 
 WHEN a developer follows the repository setup instructions
@@ -22,7 +36,10 @@ THE SYSTEM SHALL produce district and hospital tables conforming to the document
 ## 3. Weekly epidemic simulation
 
 WHEN a valid district state and disease configuration are provided
-THE SYSTEM SHALL run a one-week SEIR+H simulation and return S, E, I, R, H, and new admissions per district.
+THE SYSTEM SHALL run a one-week SEIR step conserving `S+E+I+R=N` and return the
+end state plus the auxiliary new-admission need `H_need` (people/week, not beds),
+`i_exit`, and `e_to_i` per district. (Superseding the earlier "S, E, I, R, H"
+wording; see `contracts/pipeline-types.md`.)
 
 WHEN simulation output is produced
 THE SYSTEM SHALL preserve population within tolerance and reject nonfinite or negative compartment values.

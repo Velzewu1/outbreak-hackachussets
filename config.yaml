@@ -1,0 +1,49 @@
+# ResiliNet | Boston Hospital Cascade — default configuration.
+#
+# Every value is a single source of truth with a documented unit and a
+# provenance label: PRIMARY (from the DS+X plan), ASSUMED, IMPLEMENTATION, or
+# FITTED. Synthetic-mode defaults are illustrative only. The engine reads this
+# via pipeline.config.load_config / run_config_from_dict.
+
+disease:
+  r0: 2.5                          # ASSUMED initial guess; FITTED on train data in real backtest
+  latent_days: 5.0                 # ASSUMED (sigma = 1/latent_days)
+  infectious_days: 7.0             # ASSUMED (gamma = 1/infectious_days)
+  p_h: 0.03                        # IMPLEMENTATION within the plan's ~2-5%; scales hospitalization need
+  los_days: 7.0                    # ASSUMED; los_weeks = ceil(los_days/7) (derived, no second source)
+  initial_infectious_fraction: 0.001   # ASSUMED 0.1%
+  seir_mode: A                     # PRIMARY default (Option A: one shared normalized curve)
+
+network:
+  d0_km: 3.0                       # ASSUMED distance-decay scale
+  k_nearest: 5                     # ASSUMED catchment cap
+  radius_km: 10.0                  # ASSUMED catchment radius
+  hospital_link_radius_km: 5.0     # ASSUMED hospital<->hospital link radius
+  alpha_d: 0.9                     # ASSUMED district dependence strength
+  alpha_h: 0.1                     # ASSUMED hospital dependence strength
+  beta_h: 100.0                    # ASSUMED hospital criticality (non-binding at 100)
+  distance_shape: exponential      # PRIMARY default (alt: inverse_square)
+
+# Run-level controls
+geography_unit: census_tract        # PRIMARY default
+geography_region: "Suffolk County, MA"  # PRIMARY default
+weeks: 8                            # NOT fixed by plan; demo horizon
+random_seed: 1234                   # fixed for reproducibility; identical across scenarios
+baseline_stock_policy: fixed_count  # fixed_count | fraction_of_C
+baseline_fraction: 0.75             # ASSUMED; used only when policy = fraction_of_C; converted once to a COUNT
+score_threshold: 70.0               # DISPLAY cutoff for "districts below threshold"
+# Explicit, disclosed policy. When a populated district has no hospital within
+# radius_km, assign its single NEAREST hospital (share 1.0) and disclose the
+# tract ID. OFF by default; the real Suffolk dataset turns it on for one NE
+# peninsula tract (25025170502, nearest 11.39 km).
+nearest_outside_radius_fallback: false
+
+tolerances:
+  mass_tol: 1.0e-6                  # people, relative to N
+  share_tol: 1.0e-9
+  patient_tol: 1.0e-6               # people
+  move_epsilon: 1.0e-9
+
+fdna:
+  convergence_tol_points: 0.1       # PRIMARY stopping criterion (score points)
+  max_iterations: 500               # IMPLEMENTATION safety cap

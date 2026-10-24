@@ -1,0 +1,42 @@
+{
+  "description": "Authorized public data snapshots for the ResiliNet offline real demo. Copied into the repo through Kiro. Small (~1 MB total); allowlisted in .gitignore so a fresh checkout reproduces the offline real demo.",
+  "generated": "2026-10-24",
+  "sources": [
+    {
+      "file": "massgis-suffolk-hospitals.json",
+      "role": "hospital locations + licensed bed breakdown (ICU/MED_SURG/etc.) + DPH_FACILITY_ID",
+      "publisher": "MassGIS (Commonwealth of Massachusetts)",
+      "url": "https://arcgisserver.digital.mass.gov/arcgisserver/rest/services/AGOL/Hospitals/MapServer/0/query?where=COUNTY%3D%27SUFFOLK%27&outFields=*&returnGeometry=true&outSR=4326&f=json",
+      "coverage": "Suffolk County, MA; 19 facility records",
+      "geography": "WGS84 (EPSG:4326)",
+      "license": "Public Commonwealth of Massachusetts open data",
+      "sha256_16": "fe492dfa02ec6e65",
+      "caveat": "TOTAL_BEDS are LICENSED beds, NOT staffed beds -> used as a capacity PROXY (mixed_assumptions). 9 general acute adult hospitals included; pediatric/specialty/non-acute/closed excluded with documented reasons (see pipeline/data_real.py)."
+    },
+    {
+      "file": "massgis-suffolk-tracts-2020.geojson",
+      "role": "district polygons + centroids + decennial population",
+      "publisher": "MassGIS Census2020 Base Geography",
+      "url": "https://arcgisserver.digital.mass.gov/arcgisserver/rest/services/AGOL/Census2020_Base_Geography/MapServer/3/query?where=COUNTYFP20%3D%27025%27&outFields=*&returnGeometry=true&outSR=4326&f=geojson&geometryPrecision=5&resultRecordCount=2000",
+      "coverage": "Suffolk County, MA; 234 tracts; total POP20 = 797,936",
+      "fields": "GEOID20, POP20, INTPTLAT20, INTPTLON20",
+      "license": "Public Commonwealth of Massachusetts open data",
+      "sha256_16": "84352ad80380b165",
+      "caveat": "POP20 is 2020 DECENNIAL population (NOT ACS). 4 zero-population tracts are excluded from disease modeling (geometry preserved separately)."
+    },
+    {
+      "file": "hhs-suffolk-historical-2020-2021.json",
+      "role": "historical facility COVID occupied beds (weekly means) for backtest",
+      "publisher": "U.S. HHS / HealthData.gov",
+      "url": "https://healthdata.gov/resource/anag-cw7u.json?$where=state='MA' AND fips_code='25025' AND collection_week between '2020-10-04T00:00:00' and '2021-05-30T00:00:00'",
+      "coverage": "Suffolk County facilities; 16 facilities x 35 weeks = 560 records; 2020-10-04 .. 2021-05-30",
+      "target_field": "inpatient_beds_used_covid_7_day_avg (weekly MEAN)",
+      "license": "U.S. public domain (HHS open data). Reporting stream ended ~May 2024; HISTORICAL only, not live.",
+      "sha256_16": "142dcd156fe42fdd",
+      "caveat": "85 suppressed/missing/negative COVID means; coverage field used to require full 7-day support. Weekly MEAN target compared via a declared weekly-batch observation operator."
+    }
+  ],
+  "not_shipped": [
+    {"file": "dsx-healthcare-kit.zip", "reason": "244KB kit; optional reference; not required for the offline real demo. Available from https://hackachusetts2026.vercel.app/kits/tracks/healthcare.zip"}
+  ]
+}
