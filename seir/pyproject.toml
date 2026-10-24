@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bu-hackathon-cascade"
+version = "0.1.0"
+description = "Epidemic (SEIR) layer of the Boston hospital cascade model: metapopulation SEIR-H with an FDNA plug"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "pandas>=2.2",
+    "xarray>=2024.6",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+netcdf = ["netCDF4>=1.6"]
+dev = ["pytest>=8.0", "netCDF4>=1.6"]
+
+[tool.setuptools.packages.find]
+include = ["cascade*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,37 @@
+# Omicron (BA.1) wave in Massachusetts, fitted to HHS weekly COVID admissions,
+# weeks ending 25 Dec 2021 to 5 Mar 2022. Reproduce and score the fit with
+#   python examples/calibrate_massachusetts.py
+#
+# Fixed from sources (docs/model.md has the references):
+#   periods and lengths of stay   covid_omicron preset
+#   age contacts                  Prem et al. 2021, United States, all settings,
+#                                 collapsed to three bands and made reciprocal
+#                                 for this population (data/prem2021_usa_contacts_all.csv)
+#   immune on 1 Dec 2021          22%: population protection against Omicron
+#                                 infection on 1 Dec 2021, US estimate (Klaassen
+#                                 2023). Admissions alone cannot tell immunity,
+#                                 r0 and hosp_scale apart (docs/validation.md).
+# Fitted: r0, hosp_scale and the seed. hosp_scale comes out at 1.08, so the
+# preset's severity per infection agrees with the data at this immunity.
+# The seed stands in for every infection on 1 Dec, Delta included; the fit
+# starts on 25 Dec because Omicron took over from Delta within two weeks in
+# December 2021 (Lambrou 2022) and admissions lag infections by about a week.
+disease:
+  preset: covid_omicron
+  r0: 1.95
+  hosp_scale: 1.08
+population:
+  patches: [Massachusetts]
+  ages: ["0-17", "18-64", "65+"]
+  counts: [[1378000, 4457000, 1195000]]   # 2020 Census total; age split approximate
+mixing:
+  age_contacts:                           # daily contacts of a row-age person with column ages
+    - [9.00, 8.09, 0.96]
+    - [2.50, 10.47, 1.18]
+    - [1.11, 4.40, 1.80]
+seeding:
+  exposed: {Massachusetts: 71300}
+  immune_share: 0.22
+sim:
+  start: 2021-12-01
+  days: 100

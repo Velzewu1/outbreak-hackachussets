@@ -1,0 +1,25 @@
+# Hypothetical: a new pandemic influenza in Massachusetts, for the writeup's
+# "swap the pathogen" demo. The 2009 pandemic preset with R0 raised from
+# 1.46 to 1.8 and no prior immunity; everything else as in omicron_2021.yaml.
+# Compare with
+#   python -m cascade.epi run scenarios/omicron_2021.yaml
+#   python -m cascade.epi run scenarios/novel_flu.yaml
+# or try any preset on any scenario:
+#   python -m cascade.epi run scenarios/omicron_2021.yaml --set disease.preset=measles
+disease:
+  preset: influenza_pandemic_2009
+  r0: 1.8
+population:
+  patches: [Massachusetts]
+  ages: ["0-17", "18-64", "65+"]
+  counts: [[1378000, 4457000, 1195000]]
+mixing:
+  age_contacts:
+    - [9.00, 8.09, 0.96]
+    - [2.50, 10.47, 1.18]
+    - [1.11, 4.40, 1.80]
+seeding:
+  exposed: {Massachusetts: 1000}
+sim:
+  start: 2026-11-01
+  days: 240

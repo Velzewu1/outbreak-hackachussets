@@ -1,0 +1,341 @@
+{
+  "omicron_fit": {
+    "params": {
+      "disease.r0": 1.9466956856340503,
+      "seeding.exposed.Massachusetts": 71325.56651209742,
+      "disease.hosp_scale": 1.0817539858403404
+    },
+    "cost": 0.06108523426696456,
+    "validation": {
+      "title": "Pass bars (fitted weeks)",
+      "passed": true,
+      "checks": [
+        {
+          "name": "weeks within +-40%",
+          "value": 1.0,
+          "bar": ">= 60% of weeks",
+          "passed": true
+        },
+        {
+          "name": "peak week offset",
+          "value": 0.0,
+          "bar": "within +-1",
+          "passed": true
+        },
+        {
+          "name": "peak height error",
+          "value": -0.16174484244201634,
+          "bar": "within +-25%",
+          "passed": true
+        }
+      ]
+    },
+    "metrics": {
+      "n": 11,
+      "mae": 127.83958740232787,
+      "rmse": 183.47489978221603,
+      "bias": -24.391468337909746,
+      "mape": 0.08614402371837472,
+      "log_rmse": 0.10538693576699719,
+      "share_within": 1.0,
+      "peak_offset": 0,
+      "peak_height_error": -0.16174484244201634
+    },
+    "r_eff_start": 1.497390200906839,
+    "attack_rate": 0.41764731203432454
+  },
+  "backtest": [
+    {
+      "split": "2022-01-08",
+      "severity": "fitted",
+      "params": {
+        "disease.r0": 2.227575300699035,
+        "seeding.exposed.Massachusetts": 56135.338117207095,
+        "disease.hosp_scale": 0.7200557688306866
+      },
+      "validation": {
+        "title": "held-out weeks",
+        "passed": false,
+        "checks": [
+          {
+            "name": "weeks within +-40%",
+            "value": 0.5,
+            "bar": ">= 60% of weeks",
+            "passed": false
+          },
+          {
+            "name": "peak week offset",
+            "value": 0.0,
+            "bar": "within +-1",
+            "passed": true
+          },
+          {
+            "name": "peak height error",
+            "value": -0.154208278047368,
+            "bar": "within +-25%",
+            "passed": true
+          }
+        ]
+      },
+      "metrics": {
+        "n": 8,
+        "mae": 349.7515004495102,
+        "rmse": 358.1261817263777,
+        "bias": -349.7515004495102,
+        "mape": 0.38531200414612543,
+        "log_rmse": 0.6814710900292137,
+        "share_within": 0.5,
+        "peak_offset": 0,
+        "peak_height_error": -0.154208278047368
+      }
+    },
+    {
+      "split": "2022-01-08",
+      "severity": "from preset",
+      "params": {
+        "disease.r0": 2.0675263427398605,
+        "seeding.exposed.Massachusetts": 52925.54001544437
+      },
+      "validation": {
+        "title": "held-out weeks",
+        "passed": true,
+        "checks": [
+          {
+            "name": "weeks within +-40%",
+            "value": 1.0,
+            "bar": ">= 60% of weeks",
+            "passed": true
+          },
+          {
+            "name": "peak week offset",
+            "value": 0.0,
+            "bar": "within +-1",
+            "passed": true
+          },
+          {
+            "name": "peak height error",
+            "value": -0.06011118666134945,
+            "bar": "within +-25%",
+            "passed": true
+          }
+        ]
+      },
+      "metrics": {
+        "n": 8,
+        "mae": 157.14014388774092,
+        "rmse": 185.963038993587,
+        "bias": 77.45500100097217,
+        "mape": 0.1355120538855454,
+        "log_rmse": 0.16629848347629553,
+        "share_within": 1.0,
+        "peak_offset": 0,
+        "peak_height_error": -0.06011118666134945
+      }
+    },
+    {
+      "split": "2022-01-15",
+      "severity": "fitted",
+      "params": {
+        "disease.r0": 2.016343250883265,
+        "seeding.exposed.Massachusetts": 48428.96162080354,
+        "disease.hosp_scale": 1.1781171707990723
+      },
+      "validation": {
+        "title": "held-out weeks",
+        "passed": false,
+        "checks": [
+          {
+            "name": "weeks within +-40%",
+            "value": 0.5714285714285714,
+            "bar": ">= 60% of weeks",
+            "passed": false
+          },
+          {
+            "name": "peak week offset",
+            "value": 0.0,
+            "bar": "within +-1",
+            "passed": true
+          },
+          {
+            "name": "peak height error",
+            "value": 0.20971928305609797,
+            "bar": "within +-25%",
+            "passed": true
+          }
+        ]
+      },
+      "metrics": {
+        "n": 7,
+        "mae": 410.78300496051844,
+        "rmse": 481.6729111425913,
+        "bias": 410.78300496051844,
+        "mape": 0.3619363274754338,
+        "log_rmse": 0.3249986659987212,
+        "share_within": 0.5714285714285714,
+        "peak_offset": 0,
+        "peak_height_error": 0.20971928305609797
+      }
+    },
+    {
+      "split": "2022-01-15",
+      "severity": "from preset",
+      "params": {
+        "disease.r0": 2.093442479015155,
+        "seeding.exposed.Massachusetts": 49203.49651248984
+      },
+      "validation": {
+        "title": "held-out weeks",
+        "passed": true,
+        "checks": [
+          {
+            "name": "weeks within +-40%",
+            "value": 1.0,
+            "bar": ">= 60% of weeks",
+            "passed": true
+          },
+          {
+            "name": "peak week offset",
+            "value": 0.0,
+            "bar": "within +-1",
+            "passed": true
+          },
+          {
+            "name": "peak height error",
+            "value": 0.1285794524989119,
+            "bar": "within +-25%",
+            "passed": true
+          }
+        ]
+      },
+      "metrics": {
+        "n": 7,
+        "mae": 193.35380455262307,
+        "rmse": 239.33227699247357,
+        "bias": 154.26250798285764,
+        "mape": 0.1716848462697033,
+        "log_rmse": 0.19708618659059424,
+        "share_within": 1.0,
+        "peak_offset": 0,
+        "peak_height_error": 0.1285794524989119
+      }
+    }
+  ],
+  "winter": {
+    "params": {
+      "disease.r0": 1.4038336500652937,
+      "seeding.exposed.Massachusetts": 14956.298108620365,
+      "disease.hosp_scale": 0.5067232813294082
+    },
+    "admissions": {
+      "validation": {
+        "title": "Admissions (fitted)",
+        "passed": true,
+        "checks": [
+          {
+            "name": "weeks within +-40%",
+            "value": 1.0,
+            "bar": ">= 60% of weeks",
+            "passed": true
+          },
+          {
+            "name": "peak week offset",
+            "value": 0.0,
+            "bar": "within +-1",
+            "passed": true
+          },
+          {
+            "name": "peak height error",
+            "value": -0.09741429028589714,
+            "bar": "within +-25%",
+            "passed": true
+          }
+        ]
+      },
+      "metrics": {
+        "n": 23,
+        "mae": 102.47406285143501,
+        "rmse": 134.40968823600724,
+        "bias": -20.312182224728343,
+        "mape": 0.1119212780071239,
+        "log_rmse": 0.13659835805358225,
+        "share_within": 1.0,
+        "peak_offset": 0,
+        "peak_height_error": -0.09741429028589714
+      }
+    },
+    "inpatients": {
+      "validation": {
+        "title": "COVID inpatients (never fitted)",
+        "passed": false,
+        "checks": [
+          {
+            "name": "weeks within +-40%",
+            "value": 0.8260869565217391,
+            "bar": ">= 60% of weeks",
+            "passed": true
+          },
+          {
+            "name": "peak week offset",
+            "value": 0.0,
+            "bar": "within +-1",
+            "passed": true
+          },
+          {
+            "name": "peak height error",
+            "value": -0.2642743621725682,
+            "bar": "within +-25%",
+            "passed": false
+          }
+        ]
+      },
+      "metrics": {
+        "n": 23,
+        "mae": 235.32366645828583,
+        "rmse": 302.2893208923777,
+        "bias": -231.88901641417056,
+        "mape": 0.20215232626072915,
+        "log_rmse": 0.35446878482593036,
+        "share_within": 0.8260869565217391,
+        "peak_offset": 0,
+        "peak_height_error": -0.2642743621725682
+      }
+    },
+    "icu": {
+      "validation": {
+        "title": "COVID patients in ICU (never fitted)",
+        "passed": true,
+        "checks": [
+          {
+            "name": "weeks within +-40%",
+            "value": 0.9565217391304348,
+            "bar": ">= 60% of weeks",
+            "passed": true
+          },
+          {
+            "name": "peak week offset",
+            "value": 0.0,
+            "bar": "within +-1",
+            "passed": true
+          },
+          {
+            "name": "peak height error",
+            "value": 0.0015299911766881189,
+            "bar": "within +-25%",
+            "passed": true
+          }
+        ]
+      },
+      "metrics": {
+        "n": 23,
+        "mae": 23.826320599321146,
+        "rmse": 30.707735853324653,
+        "bias": 3.3895889062782314,
+        "mape": 0.13626667551108054,
+        "log_rmse": 0.21519487990836184,
+        "share_within": 0.9565217391304348,
+        "peak_offset": 0,
+        "peak_height_error": 0.0015299911766881189
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+# Winter 2020-21 wave in Massachusetts (ancestral virus), fitted to HHS weekly
+# COVID admissions, weeks ending 3 Oct 2020 to 6 Mar 2021. The model's
+# inpatient and ICU census is never fitted: examples/calibrate_massachusetts.py
+# scores it against the COVID Tracking Project as the out-of-sample check.
+#
+# Fixed from sources: covid_ancestral preset (periods, lengths of stay), the
+# Prem 2021 age contacts (see omicron_2021.yaml), 5% immune from the spring
+# 2020 wave (an assumption: US infection-induced seroprevalence was 8% by
+# November 2020, Wiegand 2022; like the 22% for Omicron it cannot be fitted)
+# and the hospital census on the start date (COVID Tracking Project, 13 Sep
+# 2020: 313 COVID inpatients, 61 of them in ICU). Fitted: r0, hosp_scale, seed.
+disease:
+  preset: covid_ancestral
+  r0: 1.40
+  hosp_scale: 0.51
+population:
+  patches: [Massachusetts]
+  ages: ["0-17", "18-64", "65+"]
+  counts: [[1378000, 4457000, 1195000]]
+mixing:
+  age_contacts:
+    - [9.00, 8.09, 0.96]
+    - [2.50, 10.47, 1.18]
+    - [1.11, 4.40, 1.80]
+seeding:
+  exposed: {Massachusetts: 15000}
+  immune_share: 0.05
+  initial:
+    H: {Massachusetts: 252}
+    C: {Massachusetts: 61}
+sim:
+  start: 2020-09-13
+  days: 175

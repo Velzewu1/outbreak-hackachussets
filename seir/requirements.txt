@@ -1,0 +1,8 @@
+numpy>=2.0
+scipy>=1.13
+pandas>=2.2
+xarray>=2024.6
+pydantic>=2.7
+pyyaml>=6.0
+netCDF4>=1.6      # only for saving runs as .nc
+pytest>=8.0

@@ -1,0 +1,38 @@
+# omicron_2021.yaml with transmission driven by Google mobility (transit
+# stations, Massachusetts), the way MBTA ridership would drive it: beta(t) =
+# beta0 * (1 + elasticity * (mobility(t) - 1)), with mobility rebased so the
+# two weeks before the start are 1.0. Fitted as omicron_2021.yaml plus the
+# elasticity.
+#
+# What this showed (docs/validation.md): transit mobility improves the
+# in-sample fit a little (cost 0.061 -> 0.050) but does not make forecasts
+# better. With severity fitted, forecasts made before the peak put it four
+# weeks late; with the preset's severity, forecasts pass with or without
+# mobility. The main scenario leaves it out. Swap in MBTA gated entries with
+#   csv: ../data/your_mbta_file.csv, column: entries, baseline: <normal day>
+disease:
+  preset: covid_omicron
+  r0: 2.35
+  hosp_scale: 1.14
+population:
+  patches: [Massachusetts]
+  ages: ["0-17", "18-64", "65+"]
+  counts: [[1378000, 4457000, 1195000]]
+mixing:
+  age_contacts:
+    - [9.00, 8.09, 0.96]
+    - [2.50, 10.47, 1.18]
+    - [1.11, 4.40, 1.80]
+  contact_multiplier:
+    csv: ../data/google_mobility_massachusetts.csv
+    column: transit_stations
+    percent_change: true                  # Google reports % change from a 2020 baseline
+    baseline_dates: [2021-11-14, 2021-11-27]
+    smooth_days: 7
+    elasticity: 1.10
+seeding:
+  exposed: {Massachusetts: 25400}
+  immune_share: 0.22
+sim:
+  start: 2021-12-01
+  days: 100
