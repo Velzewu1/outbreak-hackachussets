@@ -32,8 +32,8 @@ class AppState {
 	playing = $state(false);
 	selectedPatch = $state<string | null>(null);
 	selectedHospital = $state<string | null>(null);
-	mapMetric = $state<MapMetric>('prevalence');
-	controlsOpen = $state(true);
+	mapMetric = $state<MapMetric>('inpatients');
+	controlsOpen = $state(false);
 
 	#abort: AbortController | null = null;
 	#timer: ReturnType<typeof setTimeout> | null = null;

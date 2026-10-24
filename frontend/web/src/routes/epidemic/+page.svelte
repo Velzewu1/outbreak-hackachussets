@@ -8,6 +8,15 @@
 	import Heatmap from '#lib/components/Heatmap.svelte';
 	import BarList from '#lib/components/BarList.svelte';
 	import Segmented from '#lib/components/Segmented.svelte';
+	import More from '#lib/components/More.svelte';
+
+	// Plain names for this page's charts.
+	const PLAIN: Record<string, string> = {
+		E: 'Caught it, not yet contagious',
+		I: 'Contagious',
+		H: 'On a hospital ward',
+		C: 'In intensive care'
+	};
 
 	const r = $derived(app.result!);
 	const e = $derived(r.epi);
@@ -19,7 +28,7 @@
 
 	const comp = (c: string, scale = 1): LineSeries => ({
 		id: c,
-		label: LABEL[c] ?? c,
+		label: PLAIN[c] ?? LABEL[c] ?? c,
 		values: (city[c] ?? []).map((v) => (v === null ? null : v * scale)),
 		color: COMPARTMENT[c] ?? '#888'
 	});
@@ -61,7 +70,7 @@
 	]);
 
 	let popView = $state<'share' | 'count'>('share');
-	let patchMetric = $state<'prevalence' | 'attack_rate' | 'inpatients' | 'force_of_infection'>('prevalence');
+	let patchMetric = $state<'prevalence' | 'attack_rate' | 'inpatients'>('prevalence');
 	const patches = $derived(r.geo.patches.map((p) => p.id));
 	const patchGrid = $derived.by(() => {
 		const g = e.by_patch[patchMetric] ?? e.by_patch.prevalence;
@@ -70,12 +79,10 @@
 		return g;
 	});
 	const patchFmt = $derived(
-		patchMetric === 'inpatients'
-			? (v: number) => `${num(v, 1)} /100k`
-			: patchMetric === 'force_of_infection'
-				? (v: number) => `${fixed(v, 4)}/d`
-				: (v: number) => pct(v, v < 0.1 ? 2 : 1)
+		patchMetric === 'inpatients' ? (v: number) => `${num(v, 1)} per 100k` : (v: number) => pct(v, v < 0.1 ? 2 : 1)
 	);
+	const PATCH_LEGEND = { prevalence: 'share contagious', attack_rate: 'share infected so far', inpatients: 'in hospital per 100k' };
+	const reff = $derived(e.rates.r_eff?.[t] ?? null);
 	const selIdx = $derived(app.selectedPatch ? patches.indexOf(app.selectedPatch) : -1);
 
 	const peakRows = $derived(
@@ -92,29 +99,26 @@
 
 <div class="page">
 	<div class="page-head">
-		<h1>Epidemic</h1>
+		<h1>How it spreads</h1>
 		<p>
-			Metapopulation SEIR with ward, ICU and deaths, by neighborhood and age. Drag across any chart to move the day; the
-			controls on the right re-run the model in a fraction of a second.
+			How many people catch it, when, and where in the city. Drag across any chart to move the day; the map and the
+			other pages follow.
 		</p>
 	</div>
 
 	<Card>
 		<div class="stats">
-			<Stat label="R₀" value={fixed(d.r0, 2)} hint="fully susceptible" />
-			<Stat label="Rₑff today" value={fixed(e.rates.r_eff?.[t], 2)} hint={`day 0: ${fixed(d.r_eff_start, 2)}`} />
-			<Stat label="Generation time" value={days(d.generation_time_days)} hint="latent + infectious" />
 			<Stat
-				label="Doubling time"
-				value={d.doubling_time_start ? days(d.doubling_time_start) : '—'}
-				hint={d.growth_rate_start !== undefined ? `growth ${fixed(d.growth_rate_start, 3)}/day at start` : ''}
+				label="Each case infects, today"
+				value={fixed(reff, 1)}
+				hint={reff === null ? '' : reff > 1 ? 'above 1: growing' : 'below 1: shrinking'}
 			/>
-			<Stat label="Ever infected" value={pct(e.summary.attack_rate, 1)} hint={`${num(e.summary.infections)} people`} />
+			<Stat label="Ever infected" value={pct(e.summary.attack_rate, 0)} hint={`${num(e.summary.infections)} people`} />
 			{#if e.summary.peak_inpatients !== undefined}
 				<Stat
-					label="Peak inpatients"
+					label="Most in hospital at once"
 					value={num(e.summary.peak_inpatients)}
-					hint={shortDate(e.summary.peak_inpatients_date)}
+					hint={`on ${shortDate(e.summary.peak_inpatients_date)}`}
 					dot={COMPARTMENT.H}
 				/>
 			{/if}
@@ -124,109 +128,29 @@
 		</div>
 	</Card>
 
-	<div class="grid-3">
-		{#each rateCards as rc (rc.id)}
-			<Card title={rc.title} sub={rc.sub}>
-				<div class="rateval">
-					<span class="big">{fixed(rc.values[t], 4)}</span><span class="muted">per day · {rc.hint}</span>
-				</div>
-				<LineChart
-					dates={e.dates}
-					height={130}
-					marker={t}
-					onscrub={scrub}
-					yMin={0}
-					yFormat={(v) => fixed(v, 3)}
-					series={[
-						{ id: 'given', label: 'Rate in the model', values: rc.values, color: rc.color },
-						...(rc.observed
-							? [{ id: 'obs', label: 'Realised in the run', values: rc.observed, color: '#c3c2b7', dashed: true, width: 1.5 }]
-							: [])
-					]}
-				/>
-			</Card>
-		{/each}
-	</div>
-
 	<div class="grid-2">
-		<Card title="Effective reproduction number" sub="Secondary infections per infection given today's immunity. Above 1 the epidemic grows.">
-			<LineChart
-				dates={e.dates}
-				height={210}
-				marker={t}
-				onscrub={scrub}
-				refLine={{ value: 1, label: 'R = 1' }}
-				yMin={0}
-				yFormat={(v) => fixed(v, 1)}
-				series={[{ id: 'reff', label: 'Rₑff', values: e.rates.r_eff ?? [], color: COMPARTMENT.I, area: true }]}
-			/>
-		</Card>
-		<Card title="Force of infection" sub="Per-capita rate at which susceptible people are infected, citywide.">
-			<LineChart
-				dates={e.dates}
-				height={210}
-				marker={t}
-				onscrub={scrub}
-				yMin={0}
-				yFormat={(v) => fixed(v, 3)}
-				series={[{ id: 'foi', label: 'Force of infection', values: e.rates.force_of_infection ?? [], color: COMPARTMENT.E, area: true }]}
-			/>
-		</Card>
-	</div>
-
-	<div class="grid-2">
-		<Card title="Infection" sub="People exposed (not yet infectious) and infectious, citywide.">
+		<Card title="People who have it" sub="Citywide, each day.">
 			<LineChart dates={e.dates} height={220} marker={t} onscrub={scrub} series={[comp('E'), comp('I')]} />
 		</Card>
-		<Card title="Susceptible and recovered">
-			{#snippet actions()}
-				<Segmented
-					options={[
-						{ value: 'share', label: '% of people' },
-						{ value: 'count', label: 'People' }
-					]}
-					value={popView}
-					onchange={(v) => (popView = v)}
-				/>
-			{/snippet}
-			<LineChart
-				dates={e.dates}
-				height={220}
-				marker={t}
-				onscrub={scrub}
-				yFormat={popView === 'share' ? (v) => pct(v) : (v) => num(v)}
-				yMax={popView === 'share' ? 1 : undefined}
-				series={[comp('S', popView === 'share' ? 1 / pop : 1), comp('R', popView === 'share' ? 1 / pop : 1)]}
-			/>
-		</Card>
-	</div>
-
-	{#if city.H}
-		<div class="grid-2">
-			<Card title="Hospital census" sub="COVID patients on the ward and in ICU, citywide.">
+		{#if city.H}
+			<Card title="People in hospital" sub="Citywide, each day.">
 				<LineChart dates={e.dates} height={220} marker={t} onscrub={scrub} series={[comp('H'), comp('C')]} />
 			</Card>
-			<Card title="Admissions per day" sub="New hospital admissions. Deaths are cumulative on the summary above.">
-				<LineChart
-					dates={e.dates}
-					height={220}
-					marker={t}
-					onscrub={scrub}
-					series={[{ id: 'adm', label: 'Admissions', values: city.new_hosp ?? [], color: COMPARTMENT.H, area: true }]}
-				/>
+		{:else}
+			<Card title="Each case infects" sub="Above 1 the outbreak grows; below 1 it shrinks.">
+				<LineChart dates={e.dates} height={220} marker={t} onscrub={scrub} refLine={{ value: 1, label: '1' }} yMin={0} yFormat={(v) => fixed(v, 1)} series={[{ id: 'reff', label: 'Each case infects', values: e.rates.r_eff ?? [], color: COMPARTMENT.I, area: true }]} />
 			</Card>
-		</div>
-	{/if}
+		{/if}
+	</div>
 
 	{#if patches.length > 1}
-		<Card title="By neighborhood" sub="Each row is a neighborhood, each column a day. Click a row to follow it on the map and in Hospitals.">
+		<Card title="Neighborhood by neighborhood" sub="Each row is a neighborhood, each column a day; brighter means more. Click a row to compare it with the city below.">
 			{#snippet actions()}
 				<Segmented
 					options={[
-						{ value: 'prevalence', label: 'Infectious' },
-						{ value: 'attack_rate', label: 'Ever infected' },
-						...(e.by_patch.inpatients ? [{ value: 'inpatients' as const, label: 'In hospital' }] : []),
-						...(e.by_patch.force_of_infection ? [{ value: 'force_of_infection' as const, label: 'Force of infection' }] : [])
+						{ value: 'prevalence', label: 'Sick now' },
+						{ value: 'attack_rate', label: 'Infected so far' },
+						...(e.by_patch.inpatients ? [{ value: 'inpatients' as const, label: 'In hospital' }] : [])
 					]}
 					value={patchMetric}
 					onchange={(v) => (patchMetric = v)}
@@ -242,58 +166,37 @@
 				selected={app.selectedPatch}
 				onrow={(p) => (app.selectedPatch = app.selectedPatch === p ? null : p)}
 				onscrub={scrub}
-				legend={patchMetric.replaceAll('_', ' ')}
+				legend={PATCH_LEGEND[patchMetric]}
 			/>
 		</Card>
 
-		<div class="grid-2">
-			<Card title="Ever infected by the end" sub="Share of residents infected over the run. Right: the day the neighborhood peaked.">
-				<BarList
-					items={peakRows}
-					format={(v) => pct(v, 1)}
-					color={COMPARTMENT.I}
-					selected={app.selectedPatch}
-					onselect={(id) => (app.selectedPatch = app.selectedPatch === id ? null : id)}
-				/>
-			</Card>
-			<Card
-				title={selIdx >= 0 ? `${app.selectedPatch} against the city` : 'Pick a neighborhood'}
-				sub="Share of residents infectious. Select a row in the heatmap or a bar."
-			>
+		{#if selIdx >= 0}
+			<Card title={`${app.selectedPatch} compared with the whole city`} sub="Share of residents who are contagious.">
 				<LineChart
 					dates={e.dates}
-					height={240}
+					height={220}
 					marker={t}
 					onscrub={scrub}
 					yFormat={(v) => pct(v, 1)}
 					series={[
-						{
-							id: 'city',
-							label: 'Citywide',
-							values: city.infectious.map((v) => (v ?? 0) / pop),
-							color: '#c3c2b7',
-							dashed: true,
-							width: 1.5
-						},
-						...(selIdx >= 0
-							? [{ id: 'sel', label: app.selectedPatch!, values: e.by_patch.prevalence.map((row) => row[selIdx]), color: COMPARTMENT.I }]
-							: [])
+						{ id: 'city', label: 'Whole city', values: city.infectious.map((v) => (v ?? 0) / pop), color: '#c3c2b7', dashed: true, width: 1.5 },
+						{ id: 'sel', label: app.selectedPatch!, values: e.by_patch.prevalence.map((row) => row[selIdx]), color: COMPARTMENT.I }
 					]}
 				/>
 			</Card>
-		</div>
+		{/if}
 	{/if}
 
 	<div class="grid-2">
-		<Card title="Ever infected by age">
+		<Card title="Who catches it, by age" sub="Share of each age group infected over the whole run.">
 			<BarList
 				items={e.ages.map((a, i) => ({ id: a, label: a, value: e.by_age.attack_rate[i] ?? 0 }))}
-				format={(v) => pct(v, 1)}
+				format={(v) => pct(v, 0)}
 				color={COMPARTMENT.I}
 			/>
 		</Card>
 		{#if e.by_age.new_hosp}
-			<Card title="Admissions by age" sub="New hospital admissions per day.">
+			<Card title="Who ends up in hospital, by age" sub="New hospital admissions per day.">
 				<LineChart
 					dates={e.dates}
 					height={180}
@@ -304,6 +207,116 @@
 			</Card>
 		{/if}
 	</div>
+
+	<More title="Technical detail" sub="Model rates, growth, force of infection and the full compartments, for modellers.">
+		<div class="stats tech">
+			<Stat label="R₀" value={fixed(d.r0, 2)} hint="fully susceptible" />
+			<Stat label="Rₑff on day 0" value={fixed(d.r_eff_start, 2)} hint="with prior immunity" />
+			<Stat label="Generation time" value={days(d.generation_time_days)} hint="latent + infectious" />
+			<Stat
+				label="Doubling time"
+				value={d.doubling_time_start ? days(d.doubling_time_start) : '—'}
+				hint={d.growth_rate_start !== undefined ? `growth ${fixed(d.growth_rate_start, 3)}/day at start` : ''}
+			/>
+		</div>
+
+		<div class="grid-3">
+			{#each rateCards as rc (rc.id)}
+				<Card title={rc.title} sub={rc.sub}>
+					<div class="rateval">
+						<span class="big">{fixed(rc.values[t], 4)}</span><span class="muted">per day · {rc.hint}</span>
+					</div>
+					<LineChart
+						dates={e.dates}
+						height={130}
+						marker={t}
+						onscrub={scrub}
+						yMin={0}
+						yFormat={(v) => fixed(v, 3)}
+						series={[
+							{ id: 'given', label: 'Rate in the model', values: rc.values, color: rc.color },
+							...(rc.observed
+								? [{ id: 'obs', label: 'Realised in the run', values: rc.observed, color: '#c3c2b7', dashed: true, width: 1.5 }]
+								: [])
+						]}
+					/>
+				</Card>
+			{/each}
+		</div>
+
+		<div class="grid-2">
+			<Card title="Effective reproduction number Rₑff" sub="Secondary infections per infection given today's immunity.">
+				<LineChart
+					dates={e.dates}
+					height={200}
+					marker={t}
+					onscrub={scrub}
+					refLine={{ value: 1, label: 'R = 1' }}
+					yMin={0}
+					yFormat={(v) => fixed(v, 1)}
+					series={[{ id: 'reff', label: 'Rₑff', values: e.rates.r_eff ?? [], color: COMPARTMENT.I, area: true }]}
+				/>
+			</Card>
+			<Card title="Force of infection" sub="Per-capita rate at which susceptible people are infected, citywide.">
+				<LineChart
+					dates={e.dates}
+					height={200}
+					marker={t}
+					onscrub={scrub}
+					yMin={0}
+					yFormat={(v) => fixed(v, 3)}
+					series={[{ id: 'foi', label: 'Force of infection', values: e.rates.force_of_infection ?? [], color: COMPARTMENT.E, area: true }]}
+				/>
+			</Card>
+		</div>
+
+		<div class="grid-2">
+			<Card title="Susceptible and recovered">
+				{#snippet actions()}
+					<Segmented
+						options={[
+							{ value: 'share', label: '% of people' },
+							{ value: 'count', label: 'People' }
+						]}
+						value={popView}
+						onchange={(v) => (popView = v)}
+					/>
+				{/snippet}
+				<LineChart
+					dates={e.dates}
+					height={200}
+					marker={t}
+					onscrub={scrub}
+					yFormat={popView === 'share' ? (v) => pct(v) : (v) => num(v)}
+					yMax={popView === 'share' ? 1 : undefined}
+					series={[comp('S', popView === 'share' ? 1 / pop : 1), comp('R', popView === 'share' ? 1 / pop : 1)]}
+				/>
+			</Card>
+			{#if city.H}
+				<Card title="Admissions per day" sub="New hospital admissions, citywide.">
+					<LineChart
+						dates={e.dates}
+						height={200}
+						marker={t}
+						onscrub={scrub}
+						series={[{ id: 'adm', label: 'Admissions', values: city.new_hosp ?? [], color: COMPARTMENT.H, area: true }]}
+					/>
+				</Card>
+			{/if}
+		</div>
+
+		{#if patches.length > 1}
+			<Card title="Ever infected by the end, by neighborhood" sub="Right: the day the neighborhood peaked.">
+				<BarList
+					items={peakRows}
+					format={(v) => pct(v, 1)}
+					color={COMPARTMENT.I}
+					selected={app.selectedPatch}
+					onselect={(id) => (app.selectedPatch = app.selectedPatch === id ? null : id)}
+				/>
+			</Card>
+		{/if}
+	</More>
 </div>
 
 <style>
@@ -321,5 +334,8 @@
 	}
 	.rateval .muted {
 		font-size: 12px;
+	}
+	.tech {
+		padding: 4px 2px;
 	}
 </style>

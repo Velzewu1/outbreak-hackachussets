@@ -18,6 +18,8 @@ export interface Place {
 export interface PatchGeo extends Place {
 	population: number;
 	vulnerability: number;
+	/** [lon, lat] well inside the neighborhood outline, for its name. */
+	label: [number, number] | null;
 }
 export interface HospitalGeo extends Place {
 	name: string;
@@ -30,6 +32,8 @@ export interface Geo {
 	patches: PatchGeo[];
 	hospitals: HospitalGeo[];
 	mappable: boolean;
+	/** Neighborhood outlines, feature id = patch index; null when the scenario has none. */
+	districts: GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon, { patch: string }> | null;
 }
 
 export interface Describe {

@@ -13,16 +13,25 @@
 	let bootError = $state<string | null>(null);
 
 	const NAV = [
-		{ href: '/', label: 'Map', icon: 'map' },
-		{ href: '/epidemic', label: 'Epidemic', icon: 'pulse' },
-		{ href: '/hospitals', label: 'Hospitals', icon: 'hospital' },
-		{ href: '/uncertainty', label: 'Uncertainty', icon: 'spread' },
-		{ href: '/validation', label: 'Validation', icon: 'check' },
-		{ href: '/model', label: 'Model', icon: 'book' }
+		{
+			group: 'Explore',
+			items: [
+				{ href: '/', label: 'Map', icon: 'map' },
+				{ href: '/epidemic', label: 'Spread', icon: 'pulse' },
+				{ href: '/hospitals', label: 'Hospitals', icon: 'hospital' }
+			]
+		},
+		{
+			group: 'Behind the numbers',
+			items: [
+				{ href: '/uncertainty', label: 'Range of outcomes', icon: 'spread' },
+				{ href: '/validation', label: 'Tested on real data', icon: 'check' },
+				{ href: '/model', label: 'How it works', icon: 'book' }
+			]
+		}
 	];
 
 	onMount(() => {
-		if (window.innerWidth < 1200) app.controlsOpen = false;
 		app.init().catch((e) => (bootError = (e as Error).message));
 	});
 </script>
@@ -39,15 +48,18 @@
 			<span class="bt"><b>Outbreak</b><small>Boston cascade</small></span>
 		</a>
 		<div class="links">
-			{#each NAV as n (n.href)}
-				<a href={n.href} class:on={page.url.pathname === n.href} title={n.label}>
-					<Icon name={n.icon} /><span>{n.label}</span>
-				</a>
+			{#each NAV as g (g.group)}
+				<div class="group">{g.group}</div>
+				{#each g.items as n (n.href)}
+					<a href={n.href} class:on={page.url.pathname === n.href} title={n.label}>
+						<Icon name={n.icon} /><span>{n.label}</span>
+					</a>
+				{/each}
 			{/each}
 		</div>
 		<div class="foot">
 			<span class="tag">Research demo</span>
-			<span class="note">Public aggregate data. Every assumption is labelled.</span>
+			<span class="note">An illustrative what-if built from public data, not a forecast.</span>
 		</div>
 	</nav>
 
@@ -56,19 +68,17 @@
 			<div class="scn">
 				{#if app.detail}
 					<b>{app.detail.title}</b>
-					<span class="muted">{app.detail.kind === 'system' ? 'SEIR + hospital cascade' : 'SEIR only'}</span>
+					{#if app.changeCount}<span class="muted">· your changes applied</span>{/if}
 				{/if}
 			</div>
 			<div class="status">
 				{#if app.error}
 					<span class="err" title={app.error}>⚠ {app.error.slice(0, 90)}</span>
 				{:else if app.loading}
-					<span class="spin"></span><span class="muted">Simulating…</span>
-				{:else if app.result}
-					<span class="ok"></span><span class="muted">{app.nDays} days · {Math.round(app.lastRunMs)} ms</span>
+					<span class="spin"></span><span class="muted">Updating…</span>
 				{/if}
 				<button class="btn" class:primary={!app.controlsOpen} onclick={() => (app.controlsOpen = !app.controlsOpen)}>
-					<Icon name="sliders" size={14} /> {app.controlsOpen ? 'Hide controls' : 'Controls'}
+					<Icon name="sliders" size={14} /> {app.controlsOpen ? 'Close' : 'What if…?'}
 					{#if app.changeCount}<span class="badge">{app.changeCount}</span>{/if}
 				</button>
 			</div>
@@ -168,6 +178,14 @@ uvicorn main:app --app-dir frontend/api --port 8000</pre>
 		flex-direction: column;
 		gap: 2px;
 	}
+	.group {
+		font-size: 11px;
+		color: var(--text-3);
+		padding: 14px 10px 6px;
+	}
+	.group:first-child {
+		padding-top: 0;
+	}
 	.links a {
 		display: flex;
 		align-items: center;
@@ -243,12 +261,6 @@ uvicorn main:app --app-dir frontend/api --port 8000</pre>
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.ok {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: var(--good);
-	}
 	.spin {
 		width: 12px;
 		height: 12px;
@@ -315,6 +327,7 @@ uvicorn main:app --app-dir frontend/api --port 8000</pre>
 		}
 		.bt,
 		.links span,
+		.group,
 		.foot {
 			display: none;
 		}

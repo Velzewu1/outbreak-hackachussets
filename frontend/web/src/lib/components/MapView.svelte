@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Map as MLMap, Marker, setWorkerUrl, type GeoJSONSource } from "maplibre-gl";
-	import type * as GeoJSON from "geojson";
+	import { Map as MLMap, Marker, setWorkerUrl, type GeoJSONSource } from 'maplibre-gl';
+	import type * as GeoJSON from 'geojson';
+	import { scaleLinear } from 'd3-scale';
 	import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import { app, type MapMetric } from '#lib/state.svelte.ts';
-	import { heatColor, occupancyStatus, STATUS } from '#lib/colors.ts';
+	import { heatColor, occupancyStatus, STATUS, STATUS_LABEL } from '#lib/colors.ts';
 	import { num, pct } from '#lib/format.ts';
 
 	setWorkerUrl(workerUrl);
@@ -22,17 +23,23 @@
 	let markers: { id: string; marker: Marker; el: HTMLElement }[] = [];
 	let labels: Marker[] = [];
 	let hoverPatch = $state<string | null>(null);
+	let hoverAt = $state<[number, number]>([0, 0]);
 
 	const r = $derived(app.result!);
 	const geo = $derived(r.geo);
 	const t = $derived(Math.min(app.day, r.epi.dates.length - 1));
 
-	const METRICS: { value: MapMetric; label: string; unit: string }[] = [
-		{ value: 'prevalence', label: 'Infectious now', unit: '% of residents infectious' },
-		{ value: 'attack_rate', label: 'Infected so far', unit: '% of residents ever infected' },
-		{ value: 'inpatients', label: 'Hospitalised', unit: 'residents in hospital per 100k' },
-		{ value: 'access_loss', label: 'Access lost', unit: '% of usual hospital care unavailable' }
+	const METRICS: { value: MapMetric; label: string; what: string }[] = [
+		{ value: 'inpatients', label: 'In hospital', what: 'Residents in hospital, per 100,000 people' },
+		{ value: 'prevalence', label: 'Sick now', what: 'Share of residents who are infectious on this day' },
+		{ value: 'attack_rate', label: 'Infected so far', what: 'Share of residents infected since the start' },
+		{ value: 'access_loss', label: 'Lost hospital access', what: 'Share of usual hospital care that is closed or full' }
 	];
+	const available = $derived(
+		METRICS.filter((m) => (m.value === 'inpatients' ? !!r.epi.by_patch.inpatients : m.value === 'access_loss' ? !!r.system : true))
+	);
+	const metric = $derived(available.find((m) => m.value === app.mapMetric) ?? available[0]);
+	const per100k = $derived(metric.value === 'inpatients');
 
 	function metricGrid(m: MapMetric): (number | null)[][] | null {
 		const bp = r.epi.by_patch;
@@ -44,52 +51,68 @@
 		return null;
 	}
 
-	const grid = $derived(metricGrid(app.mapMetric) ?? metricGrid('prevalence')!);
-	const gridMax = $derived(Math.max(1e-12, ...grid.flatMap((row) => row.map((v) => v ?? 0))));
-	const fmt = (v: number) => (app.mapMetric === 'inpatients' ? num(v, 1) : pct(v, v < 0.1 ? 1 : 0));
+	const grid = $derived(metricGrid(metric.value) ?? metricGrid('prevalence')!);
+	// One continuous scale for the whole run, so a colour means the same thing on every day
+	// and small real differences between neighborhoods still show.
+	const scale = $derived.by(() => {
+		const hi = Math.max(...grid.flatMap((row) => row.map((v) => v ?? 0)));
+		return scaleLinear()
+			.domain([0, hi > 0 ? hi : per100k ? 10 : 0.01])
+			.nice(4)
+			.clamp(true);
+	});
+	const colorOf = (v: number) => heatColor(0.1 + 0.8 * scale(v));
+	const ticks = $derived(scale.ticks(4));
+	const gradient = $derived(
+		`linear-gradient(to right, ${[0, 0.25, 0.5, 0.75, 1].map((x) => heatColor(0.1 + 0.8 * x)).join(', ')})`
+	);
+	const fmtTick = (v: number) => (per100k ? num(v) : pct(v, (ticks[1] ?? 1) - (ticks[0] ?? 0) < 0.01 ? 1 : 0));
+	const fmt = (v: number) => (per100k ? num(v) : pct(v, 1));
+	// Where today's neighborhoods sit on the scale, so a city that looks one colour explains itself.
+	const today = $derived.by(() => {
+		const row = (grid[t] ?? []).map((v) => v ?? 0);
+		if (!row.length) return null;
+		const lo = Math.min(...row);
+		const hi = Math.max(...row);
+		return { lo, hi, a: scale(lo), b: scale(hi), close: hi - lo < 0.1 * (scale.domain()[1] - scale.domain()[0]) };
+	});
 
-	function patchFeatures() {
+	function districtFeatures() {
+		const fc = geo.districts;
+		if (!fc) return { type: 'FeatureCollection' as const, features: [] };
 		return {
 			type: 'FeatureCollection' as const,
-			features: geo.patches.map((p, i) => {
-				const v = grid[t]?.[i] ?? 0;
+			features: fc.features.map((f) => {
+				const i = f.id as number;
+				const p = geo.patches[i];
 				return {
-					type: 'Feature' as const,
-					id: i,
+					...f,
 					properties: {
-						id: p.id,
-						r: Math.sqrt(p.population) / 22,
-						color: heatColor(0.08 + 0.92 * (v / gridMax)),
-						sel: p.id === app.selectedPatch ? 1 : 0
-					},
-					geometry: { type: 'Point' as const, coordinates: [p.lon!, p.lat!] }
+						patch: p.id,
+						color: colorOf(grid[t]?.[i] ?? 0),
+						sel: p.id === app.selectedPatch ? 1 : 0,
+						hover: p.id === hoverPatch ? 1 : 0
+					}
 				};
 			})
 		};
 	}
 
+	// Patient flows only for the selected neighborhood: where its people usually go.
 	function flowFeatures() {
-		const sys = r.system;
 		const feats: GeoJSON.Feature[] = [];
-		if (!sys) return { type: 'FeatureCollection' as const, features: feats };
-		const adm = r.epi.by_patch.new_hosp;
-		geo.patches.forEach((p, i) => {
-			geo.hospitals.forEach((h, j) => {
-				const share = sys.shares[i]?.[j] ?? 0;
-				const flow = (adm?.[t]?.[i] ?? 0) * share;
-				if (share < 0.1 || h.lat === null) return;
-				const focus = !app.selectedPatch || app.selectedPatch === p.id;
-				feats.push({
-					type: 'Feature',
-					properties: { w: Math.min(8, 0.8 + flow * 1.1), o: focus ? 0.1 + share * 0.5 : 0.03 },
-					geometry: {
-						type: 'LineString',
-						coordinates: [
-							[p.lon!, p.lat!],
-							[h.lon!, h.lat!]
-						]
-					}
-				});
+		const sys = r.system;
+		const i = geo.patches.findIndex((p) => p.id === app.selectedPatch);
+		if (!sys || i < 0) return { type: 'FeatureCollection' as const, features: feats };
+		const p = geo.patches[i];
+		const from = p.label ?? [p.lon!, p.lat!];
+		geo.hospitals.forEach((h, j) => {
+			const share = sys.shares[i]?.[j] ?? 0;
+			if (share < 0.05 || h.lat === null) return;
+			feats.push({
+				type: 'Feature',
+				properties: { w: 1 + share * 7 },
+				geometry: { type: 'LineString', coordinates: [from, [h.lon!, h.lat!]] }
 			});
 		});
 		return { type: 'FeatureCollection' as const, features: feats };
@@ -101,7 +124,7 @@
 		const icu = sys.occupancy_icu[t]?.[j] ?? 0;
 		const div = !!sys.on_diversion[t]?.[j];
 		const occ = Math.max(ward, icu);
-		return { ward, icu, div, occ, P: sys.operability[t]?.[j] ?? 100, status: occupancyStatus(occ, div) };
+		return { div, occ, status: occupancyStatus(occ, div) };
 	}
 
 	function buildMarkers() {
@@ -110,29 +133,79 @@
 		markers = [];
 		labels = [];
 		if (!map) return;
-		const placed: { lat: number; lon: number }[] = [];
+		for (const p of geo.patches) {
+			const e = document.createElement('div');
+			e.className = 'pl';
+			e.textContent = p.id.replace('-', '–\n');
+			labels.push(new Marker({ element: e }).setLngLat(p.label ?? [p.lon!, p.lat!]).addTo(map));
+		}
 		for (const h of geo.hospitals) {
 			if (h.lat === null) continue;
-			// campuses a few hundred metres apart: put the second label on the other side
-			const crowded = placed.some((q) => Math.abs(q.lat - h.lat!) < 0.006 && Math.abs(q.lon - h.lon!) < 0.008);
-			placed.push({ lat: h.lat, lon: h.lon! });
 			const e = document.createElement('button');
-			e.className = crowded ? 'hm flip' : 'hm';
+			e.className = 'hm';
+			e.innerHTML = `<span class="sq"></span><span class="txt">${h.id}</span>`;
 			e.onclick = (ev) => {
 				ev.stopPropagation();
 				app.selectedHospital = app.selectedHospital === h.id ? null : h.id;
 			};
-			const marker = new Marker({ element: e, anchor: crowded ? 'right' : 'left', offset: [crowded ? 6 : -6, 0] })
-				.setLngLat([h.lon!, h.lat!])
-				.addTo(map);
+			const marker = new Marker({ element: e }).setLngLat([h.lon!, h.lat!]).addTo(map);
 			markers.push({ id: h.id, marker, el: e });
 		}
-		for (const p of geo.patches) {
-			const e = document.createElement('div');
-			e.className = 'pl';
-			e.textContent = p.id;
-			labels.push(new Marker({ element: e, offset: [0, -18] }).setLngLat([p.lon!, p.lat!]).addTo(map));
+	}
+
+	// Keep names readable: nudge a neighborhood name off any hospital square, then put
+	// each hospital's name on the first side (right, left, above, below) that covers
+	// nothing already placed. Redone after every zoom.
+	type Box = [number, number, number, number];
+	const overlap = (a: Box, b: Box) =>
+		Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+	// The candidate covering the least of what is already placed; ties go to the earlier one.
+	function best<T>(cands: T[], box: (c: T) => Box, taken: Box[]): T {
+		let pick = cands[0];
+		let least = Infinity;
+		for (const c of cands) {
+			const b = box(c);
+			const area = taken.reduce((a, o) => a + overlap(o, b), 0);
+			if (area < least) [pick, least] = [c, area];
+			if (area === 0) break;
 		}
+		return pick;
+	}
+	function placeNames() {
+		if (!map) return;
+		const squares: Box[] = markers.map((m) => {
+			const c = map!.project(m.marker.getLngLat());
+			return [c.x - 8, c.y - 8, c.x + 8, c.y + 8];
+		});
+		const taken: Box[] = [...squares];
+		for (const l of labels) {
+			const c = map!.project(l.getLngLat());
+			const w = l.getElement().offsetWidth / 2 + 2;
+			const h = l.getElement().offsetHeight / 2 + 1;
+			// nearby spots, closest first
+			const shifts: [number, number][] = [];
+			for (const dx of [0, -0.5, 0.5, -1, 1, -1.5, 1.5]) for (const dy of [0, -1, 1]) shifts.push([dx * w, dy * (2 * h + 4)]);
+			shifts.sort((p, q) => Math.hypot(...p) - Math.hypot(...q));
+			const at = ([dx, dy]: [number, number]): Box => [c.x + dx - w, c.y + dy - h, c.x + dx + w, c.y + dy + h];
+			const shift = best(shifts, at, taken);
+			l.setOffset(shift);
+			taken.push(at(shift));
+		}
+		markers.forEach((m, i) => {
+			const c = map!.project(m.marker.getLngLat());
+			const txt = m.el.querySelector('.txt') as HTMLElement;
+			const w = txt.offsetWidth;
+			const h = txt.offsetHeight;
+			const sides: [string, Box][] = [
+				['right', [c.x + 9, c.y - h / 2, c.x + 9 + w, c.y + h / 2]],
+				['left', [c.x - 9 - w, c.y - h / 2, c.x - 9, c.y + h / 2]],
+				['top', [c.x - w / 2, c.y - 9 - h, c.x + w / 2, c.y - 9]],
+				['bottom', [c.x - w / 2, c.y + 9, c.x + w / 2, c.y + 9 + h]]
+			];
+			const [side, box] = best(sides, ([, b]) => b, taken.filter((b) => b !== squares[i]));
+			m.el.dataset.side = side;
+			taken.push(box);
+		});
 	}
 
 	function paintMarkers() {
@@ -140,28 +213,31 @@
 		markers.forEach((m) => {
 			const j = r.system!.hospitals.indexOf(m.id);
 			const s = hospitalState(j);
-			m.el.dataset.status = s.status;
+			const name = geo.hospitals[j]?.name ?? m.id;
 			m.el.classList.toggle('div', s.div);
 			m.el.classList.toggle('sel', app.selectedHospital === m.id);
 			m.el.style.setProperty('--c', STATUS[s.status]);
-			m.el.style.setProperty('--fill', `${Math.min(100, s.occ * 100)}%`);
-			m.el.innerHTML = `<span class="ring"></span><span class="txt"><b>${m.id}</b><small>${Math.round(s.occ * 100)}%${s.div ? ' · div' : ''}</small></span>`;
-			m.el.setAttribute('aria-label', `${m.id}: ${Math.round(s.occ * 100)}% occupied${s.div ? ', on diversion' : ''}`);
+			m.el.title = `${name}: ${Math.round(s.occ * 100)}% of beds in use. ${STATUS_LABEL[s.status]}.`;
 		});
 	}
 
 	function fit() {
 		if (!map) return;
-		const pts = [...geo.patches, ...geo.hospitals].filter((p) => p.lat !== null);
+		const pts: number[][] = [];
+		for (const f of geo.districts?.features ?? []) {
+			const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+			for (const poly of polys) pts.push(...poly[0]);
+		}
+		for (const p of [...geo.patches, ...geo.hospitals]) if (p.lat !== null) pts.push([p.lon!, p.lat!]);
 		if (!pts.length) return;
-		const lons = pts.map((p) => p.lon!);
-		const lats = pts.map((p) => p.lat!);
+		const lons = pts.map((p) => p[0]);
+		const lats = pts.map((p) => p[1]);
 		map.fitBounds(
 			[
 				[Math.min(...lons), Math.min(...lats)],
 				[Math.max(...lons), Math.max(...lats)]
 			],
-			{ padding: { top: 80, bottom: 80, left: 90, right: 150 }, duration: 0, maxZoom: 13 }
+			{ padding: { top: 96, bottom: 24, left: 24, right: 24 }, duration: 0, maxZoom: 13 }
 		);
 	}
 
@@ -176,64 +252,64 @@
 						type: 'raster',
 						tiles: basemapTiles,
 						tileSize: 256,
-						attribution: '© OpenStreetMap contributors © CARTO'
+						attribution: '© OpenStreetMap contributors © CARTO · Boundaries: City of Boston'
 					}
 				},
 				layers: [
 					{ id: 'bg', type: 'background', paint: { 'background-color': '#0e0e10' } },
-					{ id: 'carto', type: 'raster', source: 'carto', paint: { 'raster-opacity': 0.9, 'raster-saturation': -0.4 } }
+					{ id: 'carto', type: 'raster', source: 'carto', paint: { 'raster-opacity': 0.75, 'raster-saturation': -0.6 } }
 				]
 			},
 			center: [-71.085, 42.325],
 			zoom: 11.4
 		});
 		map.on('load', () => {
+			map!.addSource('districts', { type: 'geojson', data: districtFeatures() });
 			map!.addSource('flows', { type: 'geojson', data: flowFeatures() });
-			map!.addSource('patches', { type: 'geojson', data: patchFeatures() });
+			map!.addLayer({
+				id: 'district-fill',
+				type: 'fill',
+				source: 'districts',
+				paint: { 'fill-color': ['get', 'color'], 'fill-opacity': ['case', ['==', ['get', 'hover'], 1], 0.92, 0.78] }
+			});
+			map!.addLayer({
+				id: 'district-line',
+				type: 'line',
+				source: 'districts',
+				paint: { 'line-color': '#0b0b0c', 'line-width': 1.2 }
+			});
+			map!.addLayer({
+				id: 'district-sel',
+				type: 'line',
+				source: 'districts',
+				filter: ['==', ['get', 'sel'], 1],
+				paint: { 'line-color': '#f0efec', 'line-width': 2.5 }
+			});
 			map!.addLayer({
 				id: 'flows',
 				type: 'line',
 				source: 'flows',
 				layout: { 'line-cap': 'round' },
-				paint: { 'line-color': '#f0efec', 'line-width': ['get', 'w'], 'line-opacity': ['get', 'o'] }
+				paint: { 'line-color': '#f0efec', 'line-width': ['get', 'w'], 'line-opacity': 0.85 }
 			});
-			map!.addLayer({
-				id: 'halo',
-				type: 'circle',
-				source: 'patches',
-				paint: {
-					'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, ['*', ['get', 'r'], 0.8], 14, ['*', ['get', 'r'], 3]],
-					'circle-color': ['get', 'color'],
-					'circle-opacity': 0.16,
-					'circle-blur': 0.6
-				}
-			});
-			map!.addLayer({
-				id: 'patches',
-				type: 'circle',
-				source: 'patches',
-				paint: {
-					'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, ['*', ['get', 'r'], 0.5], 14, ['*', ['get', 'r'], 1.9]],
-					'circle-color': ['get', 'color'],
-					'circle-opacity': 0.92,
-					'circle-stroke-color': ['case', ['==', ['get', 'sel'], 1], '#f0efec', '#0e0e10'],
-					'circle-stroke-width': ['case', ['==', ['get', 'sel'], 1], 2.5, 2]
-				}
-			});
-			map!.on('mousemove', 'patches', (e) => {
+			map!.on('mousemove', 'district-fill', (e) => {
 				map!.getCanvas().style.cursor = 'pointer';
-				hoverPatch = (e.features?.[0]?.properties?.id as string) ?? null;
+				hoverPatch = (e.features?.[0]?.properties?.patch as string) ?? null;
+				hoverAt = [e.point.x, e.point.y];
 			});
-			map!.on('mouseleave', 'patches', () => {
+			map!.on('mouseleave', 'district-fill', () => {
 				map!.getCanvas().style.cursor = '';
 				hoverPatch = null;
 			});
-			map!.on('click', 'patches', (e) => {
-				const id = e.features?.[0]?.properties?.id as string;
-				app.selectedPatch = app.selectedPatch === id ? null : id;
+			map!.on('click', (e) => {
+				const f = map!.queryRenderedFeatures(e.point, { layers: ['district-fill'] })[0];
+				const id = (f?.properties?.patch as string | undefined) ?? null;
+				app.selectedPatch = id && app.selectedPatch !== id ? id : null;
 			});
 			buildMarkers();
 			fit();
+			placeNames();
+			map!.on('zoomend', placeNames);
 			ready = true;
 		});
 		return () => {
@@ -251,88 +327,68 @@
 		placesKey = key;
 		buildMarkers();
 		fit();
+		placeNames();
 	});
 
-	// Repaint on every day, metric, selection or new run.
+	// Repaint on every day, metric, selection, hover or new run.
 	$effect(() => {
 		if (!ready || !map) return;
-		void [t, app.mapMetric, app.selectedPatch, app.selectedHospital, r];
-		(map.getSource('patches') as GeoJSONSource | undefined)?.setData(patchFeatures());
+		void [t, scale, app.selectedPatch, app.selectedHospital, hoverPatch, r];
+		(map.getSource('districts') as GeoJSONSource | undefined)?.setData(districtFeatures());
 		(map.getSource('flows') as GeoJSONSource | undefined)?.setData(flowFeatures());
 		paintMarkers();
 	});
 
-	const focusId = $derived(hoverPatch ?? app.selectedPatch);
-	const focus = $derived.by(() => {
-		const i = geo.patches.findIndex((p) => p.id === focusId);
-		if (i < 0) return null;
-		const p = geo.patches[i];
-		const bp = r.epi.by_patch;
-		const top = r.system
-			? geo.hospitals
-					.map((h, j) => ({ id: h.id, share: r.system!.shares[i][j], min: r.system!.travel[i][j] }))
-					.sort((a, b) => b.share - a.share)
-					.slice(0, 3)
-			: [];
-		return {
-			p,
-			prevalence: bp.prevalence[t]?.[i] ?? 0,
-			attack: bp.attack_rate[t]?.[i] ?? 0,
-			inpatients: bp.inpatients?.[t]?.[i] ?? null,
-			access: r.system?.access[t]?.[i] ?? null,
-			top
-		};
+	const tip = $derived.by(() => {
+		const i = geo.patches.findIndex((p) => p.id === hoverPatch);
+		return i < 0 ? null : { id: geo.patches[i].id, value: grid[t]?.[i] ?? 0 };
 	});
-	const legendStops = [0, 0.25, 0.5, 0.75, 1];
 </script>
 
 <div class="wrap">
 	<div class="map" bind:this={el}></div>
 
 	<div class="overlay tl">
-		<div class="seg">
-			{#each METRICS as m (m.value)}
-				{#if m.value !== 'access_loss' || r.system}
-					<button class:on={app.mapMetric === m.value} onclick={() => (app.mapMetric = m.value)}>{m.label}</button>
-				{/if}
+		<div class="seg" role="tablist" aria-label="Colour neighborhoods by">
+			{#each available as m (m.value)}
+				<button role="tab" aria-selected={metric.value === m.value} class:on={metric.value === m.value} onclick={() => (app.mapMetric = m.value)}>{m.label}</button>
 			{/each}
 		</div>
+		<p class="hint">Click a neighborhood to see where its patients go. Press play below to watch the wave.</p>
 	</div>
 
 	<div class="overlay br legend">
-		<div class="lt">Neighborhoods · {METRICS.find((m) => m.value === app.mapMetric)?.unit}</div>
-		<div class="ramp">
-			{#each legendStops as s (s)}<i style:background={heatColor(0.08 + 0.92 * s)}></i>{/each}
+		<div class="lt">{metric.what}</div>
+		<div class="bar" style:background={gradient}>
+			{#if today}<span class="range" style:left="{today.a * 100}%" style:width="max(3px, {(today.b - today.a) * 100}%)"></span>{/if}
 		</div>
-		<div class="ends"><span>0</span><span>{fmt(gridMax)}</span></div>
-		{#if r.system}
-			<div class="lt" style="margin-top:10px">Hospitals · bed occupancy</div>
-			<div class="status">
-				<span><i style:background={STATUS.good}></i>&lt;85%</span>
-				<span><i style:background={STATUS.warning}></i>85–95%</span>
-				<span><i style:background={STATUS.serious}></i>95–100%</span>
-				<span><i style:background={STATUS.critical}></i>full / diverting</span>
+		<div class="ticks">
+			{#each ticks as v (v)}<span>{fmtTick(v)}</span>{/each}
+		</div>
+		{#if today}
+			<div class="today">
+				{#if today.close}
+					Today all neighborhoods are close: {fmt(today.lo)} to {fmt(today.hi)}, marked by the white box.
+				{:else}
+					Today's neighborhoods run from {fmt(today.lo)} to {fmt(today.hi)}, marked by the white box.
+				{/if}
 			</div>
-			<div class="lt" style="margin-top:6px">Lines: usual patient flows (width = admissions/day)</div>
+		{/if}
+		{#if r.system}
+			<div class="lt hosp">Hospital squares: how full their beds are</div>
+			<div class="status">
+				<span><i style:background={STATUS.good}></i>Normal</span>
+				<span><i style:background={STATUS.warning}></i>85%+</span>
+				<span><i style:background={STATUS.serious}></i>95%+</span>
+				<span><i style:background={STATUS.critical}></i>Full</span>
+			</div>
 		{/if}
 	</div>
 
-	{#if focus}
-		<div class="overlay tr card">
-			<div class="ct">{focus.p.id}</div>
-			<div class="cs">{num(focus.p.population)} residents · vulnerability ×{focus.p.vulnerability.toFixed(1)}</div>
-			<dl>
-				<dt>Infectious now</dt><dd>{pct(focus.prevalence, 2)}</dd>
-				<dt>Ever infected</dt><dd>{pct(focus.attack, 1)}</dd>
-				{#if focus.inpatients !== null}<dt>In hospital</dt><dd>{num(focus.inpatients, 1)}</dd>{/if}
-				{#if focus.access !== null}<dt>Access to usual care</dt><dd>{pct(focus.access, 0)}</dd>{/if}
-			</dl>
-			{#if focus.top.length}
-				<div class="cs" style="margin-top:8px">Usual hospitals</div>
-				{#each focus.top as h (h.id)}
-					<div class="hrow"><span>{h.id}</span><span>{pct(h.share)} · {Math.round(h.min)} min</span></div>
-				{/each}
-			{/if}
+	{#if tip}
+		<div class="tip" style:left="{hoverAt[0] + 14}px" style:top="{hoverAt[1] + 14}px">
+			<b>{tip.id}</b>
+			<span>{metric.label}: {per100k ? `${num(tip.value)} per 100k` : pct(tip.value, 1)}</span>
 		</div>
 	{/if}
 </div>
@@ -343,9 +399,7 @@
 		width: 100%;
 		height: 100%;
 		min-height: 420px;
-		background:
-			radial-gradient(circle at 1px 1px, #1c1c20 1px, transparent 0) 0 0 / 22px 22px,
-			#0e0e10;
+		background: #0e0e10;
 	}
 	.map {
 		position: absolute;
@@ -358,18 +412,16 @@
 	.tl {
 		top: 14px;
 		left: 14px;
-	}
-	.br {
-		bottom: 34px;
 		right: 14px;
 	}
-	.tr {
-		top: 14px;
+	.br {
+		bottom: 30px;
 		right: 14px;
 	}
 	.seg {
-		display: flex;
-		background: rgb(20 20 22 / 0.88);
+		display: inline-flex;
+		flex-wrap: wrap;
+		background: rgb(20 20 22 / 0.9);
 		backdrop-filter: blur(10px);
 		border: 1px solid var(--line-2);
 		border-radius: 10px;
@@ -379,9 +431,9 @@
 	.seg button {
 		border: 0;
 		background: transparent;
-		color: var(--text-3);
-		font-size: 12px;
-		padding: 6px 10px;
+		color: var(--text-2);
+		font-size: 12.5px;
+		padding: 7px 12px;
 		border-radius: 7px;
 		cursor: pointer;
 	}
@@ -393,140 +445,159 @@
 	.seg button:not(.on):hover {
 		color: var(--text-1);
 	}
-	.legend,
-	.card {
-		background: rgb(20 20 22 / 0.88);
+	.hint {
+		margin: 8px 0 0 4px;
+		font-size: 12px;
+		color: var(--text-2);
+		text-shadow: 0 1px 3px #000;
+	}
+	.legend {
+		background: rgb(20 20 22 / 0.9);
 		backdrop-filter: blur(10px);
 		border: 1px solid var(--line-2);
 		border-radius: 12px;
-		padding: 10px 12px;
-		font-size: 11.5px;
+		padding: 12px 14px;
+		font-size: 12px;
 		color: var(--text-2);
-	}
-	.legend {
 		width: 268px;
 	}
 	.lt {
+		color: var(--text-2);
+		margin-bottom: 8px;
+		line-height: 1.4;
+	}
+	.lt.hosp {
+		margin: 12px 0 6px;
+	}
+	.bar {
+		position: relative;
+		height: 12px;
+		border-radius: 3px;
+	}
+	.range {
+		position: absolute;
+		top: -3px;
+		bottom: -3px;
+		border: 1.5px solid #fff;
+		border-radius: 3px;
+		transform: translateX(-1.5px);
+		box-sizing: content-box;
+		transition:
+			left 0.2s,
+			width 0.2s;
+	}
+	.today {
+		margin-top: 8px;
+		font-size: 11.5px;
+		line-height: 1.4;
 		color: var(--text-3);
-		margin-bottom: 6px;
 	}
-	.ramp {
-		display: grid;
-		grid-template-columns: repeat(5, 1fr);
-		height: 8px;
-		border-radius: 4px;
-		overflow: hidden;
-	}
-	.ends {
+	.ticks {
 		display: flex;
 		justify-content: space-between;
-		color: var(--text-3);
 		margin-top: 4px;
 		font-family: var(--mono);
 		font-size: 10.5px;
+		color: var(--text-3);
 	}
 	.status {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 4px 10px;
+		gap: 4px 12px;
 	}
 	.status i {
 		display: inline-block;
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		margin-right: 5px;
+		width: 10px;
+		height: 10px;
+		border-radius: 3px;
+		margin-right: 6px;
+		vertical-align: -1px;
 	}
-	.card {
-		width: 250px;
-	}
-	.ct {
-		font-size: 14px;
-		font-weight: 600;
-		color: var(--text-1);
-	}
-	.cs {
-		color: var(--text-3);
-		margin-top: 2px;
-	}
-	dl {
-		display: grid;
-		grid-template-columns: 1fr auto;
-		gap: 4px 12px;
-		margin: 10px 0 0;
-	}
-	dt {
-		color: var(--text-3);
-	}
-	dd {
-		margin: 0;
-		color: var(--text-1);
-		font-family: var(--mono);
-		text-align: right;
-	}
-	.hrow {
+	.tip {
+		position: absolute;
+		z-index: 3;
+		pointer-events: none;
+		background: rgb(20 20 22 / 0.95);
+		border: 1px solid var(--line-2);
+		border-radius: 8px;
+		padding: 6px 9px;
+		font-size: 12px;
 		display: flex;
-		justify-content: space-between;
-		font-family: var(--mono);
-		font-size: 11px;
+		flex-direction: column;
+		gap: 2px;
+		white-space: nowrap;
+	}
+	.tip span {
 		color: var(--text-2);
-		margin-top: 3px;
 	}
+	/* A MapLibre marker: keep its absolute positioning, only drop the button chrome. */
 	:global(.hm) {
-		all: unset;
 		cursor: pointer;
-		display: flex;
-		align-items: center;
-		gap: 6px;
+		width: 11px;
+		height: 11px;
+		padding: 0;
+		border: 0;
+		background: none;
 	}
-	:global(.hm .ring) {
-		width: 12px;
-		height: 12px;
+	:global(.hm .sq) {
+		position: absolute;
+		inset: 0;
 		border-radius: 3px;
 		background: var(--c);
-		box-shadow: 0 0 0 2px #0e0e10, 0 0 0 3px rgb(255 255 255 / 0.25);
+		box-shadow: 0 0 0 2px #0b0b0c;
 	}
-	:global(.hm.flip) {
-		flex-direction: row-reverse;
-	}
-	:global(.hm.flip .txt) {
-		align-items: flex-end;
-	}
-	:global(.hm.div .ring) {
+	:global(.hm.div .sq) {
 		animation: alarm 1.2s ease-in-out infinite;
 	}
 	@keyframes alarm {
 		50% {
-			box-shadow: 0 0 0 2px #0e0e10, 0 0 0 7px rgb(208 59 59 / 0.55);
+			box-shadow: 0 0 0 2px #0b0b0c, 0 0 0 7px rgb(208 59 59 / 0.55);
 		}
 	}
 	:global(.hm .txt) {
-		display: flex;
-		flex-direction: column;
-		line-height: 1.1;
-		background: rgb(14 14 16 / 0.82);
-		padding: 2px 6px;
-		border-radius: 5px;
-	}
-	:global(.hm .txt b) {
+		position: absolute;
+		top: 50%;
+		left: calc(100% + 4px);
+		transform: translateY(-50%);
 		font-size: 11px;
-		color: #f0efec;
 		font-weight: 600;
+		line-height: 16px;
+		color: #f0efec;
+		background: rgb(11 11 12 / 0.85);
+		padding: 0 5px;
+		border-radius: 4px;
+		white-space: nowrap;
 	}
-	:global(.hm .txt small) {
-		font-size: 10px;
-		color: #c3c2b7;
-		font-family: var(--mono);
+	:global(.hm[data-side='left'] .txt) {
+		left: auto;
+		right: calc(100% + 4px);
+	}
+	:global(.hm[data-side='top'] .txt) {
+		top: auto;
+		bottom: calc(100% + 4px);
+		left: 50%;
+		transform: translateX(-50%);
+	}
+	:global(.hm[data-side='bottom'] .txt) {
+		top: calc(100% + 4px);
+		left: 50%;
+		transform: translateX(-50%);
+	}
+	:global(.hm.div .txt) {
+		color: #ff8a8a;
 	}
 	:global(.hm.sel .txt) {
-		outline: 1px solid #f0efec;
+		outline: 1.5px solid #f0efec;
 	}
 	:global(.pl) {
-		font-size: 10.5px;
-		color: rgb(240 239 236 / 0.75);
-		text-shadow: 0 1px 2px #000, 0 0 6px #000;
+		font-size: 11px;
+		line-height: 1.15;
+		font-weight: 500;
+		color: rgb(255 255 255 / 0.92);
+		text-shadow: 0 0 3px #000, 0 1px 2px #000, 0 0 8px rgb(0 0 0 / 0.8);
 		pointer-events: none;
-		white-space: nowrap;
+		white-space: pre;
+		text-align: center;
 	}
 	:global(.maplibregl-ctrl-attrib) {
 		background: rgb(14 14 16 / 0.7) !important;
@@ -534,5 +605,10 @@
 	}
 	:global(.maplibregl-ctrl-attrib a) {
 		color: var(--text-3) !important;
+	}
+	@media (max-width: 900px) {
+		.hint {
+			display: none;
+		}
 	}
 </style>

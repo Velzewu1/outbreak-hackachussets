@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { app } from '#lib/state.svelte.ts';
 	import { api, type EnsembleResult, type SensitivityRow } from '#lib/api.ts';
-	import { num, pct, fixed } from '#lib/format.ts';
+	import { num, pct } from '#lib/format.ts';
 	import { COMPARTMENT } from '#lib/colors.ts';
 	import Card from '#lib/components/Card.svelte';
 	import Stat from '#lib/components/Stat.svelte';
@@ -18,16 +18,17 @@
 	let ensErr = $state<string | null>(null);
 	let variable = $state('inpatients');
 
-	const VARS: Record<string, { label: string; color: string; fmt: (v: number) => string }> = {
-		infections: { label: 'New infections', color: COMPARTMENT.I, fmt: (v) => num(v) },
-		new_hosp: { label: 'Admissions', color: COMPARTMENT.H, fmt: (v) => num(v, 1) },
-		inpatients: { label: 'Inpatients', color: COMPARTMENT.H, fmt: (v) => num(v) },
-		icu: { label: 'ICU', color: COMPARTMENT.C, fmt: (v) => num(v, 1) },
-		new_deaths: { label: 'Deaths / day', color: COMPARTMENT.D, fmt: (v) => num(v, 2) },
-		r_eff: { label: 'Rₑff', color: COMPARTMENT.I, fmt: (v) => fixed(v, 2) }
+	const VARS: Record<string, { label: string; peak: string; color: string; fmt: (v: number) => string }> = {
+		inpatients: { label: 'In hospital', peak: 'Most in hospital at once', color: COMPARTMENT.H, fmt: (v) => num(v) },
+		icu: { label: 'In intensive care', peak: 'Most in intensive care at once', color: COMPARTMENT.C, fmt: (v) => num(v, 1) },
+		new_hosp: { label: 'Admitted per day', peak: 'Most admitted in one day', color: COMPARTMENT.H, fmt: (v) => num(v, 1) },
+		infections: { label: 'New infections per day', peak: 'Most new infections in one day', color: COMPARTMENT.I, fmt: (v) => num(v) },
+		new_deaths: { label: 'Deaths per day', peak: 'Most deaths in one day', color: COMPARTMENT.D, fmt: (v) => num(v, 2) }
 	};
 
 	async function runEnsemble() {
+		// Each press after the first rolls new luck.
+		if (ens) seed = (seed + 1) % 100;
 		ensBusy = true;
 		ensErr = null;
 		try {
@@ -73,12 +74,23 @@
 		'disease.p_death_icu',
 		'seeding.immune_share'
 	];
+	const PARAM_LABEL: Record<string, string> = {
+		'disease.r0': 'How contagious',
+		'disease.latent_period': 'Days before contagious',
+		'disease.infectious_period': 'Days contagious',
+		'disease.hosp_scale': 'How severe',
+		'disease.los_ward': 'Days on a ward',
+		'disease.los_icu': 'Days in intensive care',
+		'disease.p_icu': 'Chance of needing intensive care',
+		'disease.p_death_icu': 'Chance of dying in intensive care',
+		'seeding.immune_share': 'Already immune'
+	};
 	const METRICS = [
-		{ value: 'peak_inpatients', label: 'Peak inpatients' },
-		{ value: 'peak_icu', label: 'Peak ICU' },
-		{ value: 'attack_rate', label: 'Attack rate' },
-		{ value: 'deaths', label: 'Deaths' },
-		{ value: 'peak_admissions', label: 'Peak admissions' }
+		{ value: 'peak_inpatients', label: 'Most in hospital at once' },
+		{ value: 'peak_icu', label: 'Most in intensive care at once' },
+		{ value: 'peak_admissions', label: 'Most admitted in one day' },
+		{ value: 'attack_rate', label: 'Share of people ever infected' },
+		{ value: 'deaths', label: 'Deaths' }
 	];
 	let metric = $state('peak_inpatients');
 	let rel = $state(0.25);
@@ -110,42 +122,37 @@
 
 <div class="page">
 	<div class="page-head">
-		<h1>Uncertainty</h1>
+		<h1>Range of outcomes</h1>
 		<p>
-			Two questions: how much does chance alone move the outcome (stochastic chain-binomial runs of the same scenario),
-			and which assumptions move it most (one input at a time, ± a share of its value). Both use the epidemic layer
-			with your current controls.
+			The map shows one possible outbreak. Real outbreaks involve luck, and several of the numbers that go into the
+			model are educated guesses. This page shows how far the answer could move because of either. Both use your
+			current <b>What if…?</b> settings.
 		</p>
 	</div>
 
-	<Card title="Stochastic ensemble" sub="Each run draws its own random infections, recoveries and admissions. Bands show the 5–95% and 25–75% ranges across runs.">
+	<Card title="What luck can do" sub="The same outbreak, run many times with chance at every step: who meets whom, who gets sick enough for hospital. The thin lines are single runs. The shaded band holds 9 in 10 of them and the bright line is the middle one.">
 		{#snippet actions()}
 			<button class="btn" class:primary={!ens} onclick={runEnsemble} disabled={ensBusy}>
-				{ensBusy ? `Running ${runs} runs…` : ens ? 'Re-run' : 'Run ensemble'}
+				{ensBusy ? `Running ${runs} outbreaks…` : ens ? 'Roll again' : `Run ${runs} outbreaks`}
 			</button>
 		{/snippet}
 		<div class="ensgrid">
 			<div class="knobs">
-				<Slider label="Runs" value={runs} min={10} max={200} step={10} format={(x) => String(x)} onchange={(x) => (runs = Math.round(x))} />
-				<Slider label="Random seed" value={seed} min={0} max={99} step={1} format={(x) => String(x)} onchange={(x) => (seed = Math.round(x))} />
+				<Slider label="How many runs" help="More runs give a smoother range but take longer." value={runs} min={10} max={200} step={10} format={(x) => String(x)} onchange={(x) => (runs = Math.round(x))} />
 				{#if ens}
 					<div class="stats one">
-						<Stat label="Runs that took off" value={pct(ens.takeoff_share)} hint="the rest died out by chance" />
+						<Stat label="Outbreaks that took off" value={pct(ens.takeoff_share)} hint="in the rest, it fizzled out early by chance" />
 						{#if peakStats}
-							<Stat
-								label={`Peak ${v.label.toLowerCase()}`}
-								value={v.fmt(peakStats.med)}
-								hint={`90% of runs: ${v.fmt(peakStats.lo)} – ${v.fmt(peakStats.hi)}`}
-							/>
+							<Stat label={v.peak} value={v.fmt(peakStats.med)} hint={`in a typical run; 9 in 10 runs fall between ${v.fmt(peakStats.lo)} and ${v.fmt(peakStats.hi)}`} />
 						{/if}
 					</div>
 					{#if hist.length}
-						<div class="hist" aria-label="Distribution of peaks">
+						<div class="hist" aria-label="How the highest point varies across runs">
 							{#each hist as b, i (i)}
 								<span style:height="{(b.count / histMax) * 100}%" title="{v.fmt(b.x0)}: {b.count} runs"></span>
 							{/each}
 						</div>
-						<div class="histlab muted">Peaks across runs</div>
+						<div class="histlab muted">Where the highest point landed in each run, low to high</div>
 					{/if}
 				{/if}
 			</div>
@@ -163,21 +170,20 @@
 						marker={app.day}
 						onscrub={(i) => (app.day = i)}
 						yFormat={v.fmt}
-						refLine={variable === 'r_eff' ? { value: 1, label: 'R = 1' } : null}
 						bands={[
 							{ lo: band[0], hi: band[4], color: v.color, opacity: 0.12 },
 							{ lo: band[1], hi: band[3], color: v.color, opacity: 0.22 }
 						]}
 						series={[
-							...(ens.samples[variable] ?? []).map((s, i) => ({ id: `s${i}`, label: `run ${i}`, values: s, color: v.color, muted: true })),
-							{ id: 'p95', label: '95th percentile', values: band[4], color: v.color, width: 0 },
-							{ id: 'med', label: 'Median', values: band[2], color: v.color },
-							{ id: 'p5', label: '5th percentile', values: band[0], color: v.color, width: 0 }
+							...(ens.samples[variable] ?? []).map((s, i) => ({ id: `s${i}`, label: `run ${i + 1}`, values: s, color: v.color, muted: true })),
+							{ id: 'p95', label: 'High end (1 in 20 runs above)', values: band[4], color: v.color, width: 0 },
+							{ id: 'med', label: 'Middle run', values: band[2], color: v.color },
+							{ id: 'p5', label: 'Low end (1 in 20 runs below)', values: band[0], color: v.color, width: 0 }
 						]}
 						legend={false}
 					/>
 				{:else if !ensBusy}
-					<div class="empty tall">Run the ensemble to see the spread. 40 runs take a few seconds.</div>
+					<div class="empty tall">Press <b>Run {runs} outbreaks</b> to see the range. It takes a few seconds.</div>
 				{:else}
 					<div class="empty tall">Simulating…</div>
 				{/if}
@@ -185,22 +191,23 @@
 		</div>
 	</Card>
 
-	<Card title="Sensitivity" sub="Each input at −/+ the chosen share, others held at their current values. ε is the elasticity: % change in the output per % change in the input.">
+	<Card title="Which guesses matter most" sub="Each number is moved down and up by the same amount while everything else stays put. The longer the bar, the more the result depends on getting that number right.">
 		{#snippet actions()}
 			<button class="btn" class:primary={!sens} onclick={runSensitivity} disabled={sensBusy || !chosen.length}>
-				{sensBusy ? 'Running…' : sens ? 'Re-run' : 'Run sensitivity'}
+				{sensBusy ? 'Running…' : sens ? 'Run again' : 'Compare'}
 			</button>
 		{/snippet}
 		<div class="sensgrid">
 			<div class="knobs">
 				<label class="field"
-					><span>Output</span>
+					><span>Result to watch</span>
 					<select class="input" bind:value={metric}>
 						{#each METRICS as m (m.value)}<option value={m.value}>{m.label}</option>{/each}
 					</select>
 				</label>
-				<Slider label="Move each input by" value={rel} min={0.05} max={0.5} step={0.05} format={(x) => `±${Math.round(x * 100)}%`} onchange={(x) => (rel = x)} />
+				<Slider label="Move each number by" value={rel} min={0.05} max={0.5} step={0.05} format={(x) => `±${Math.round(x * 100)}%`} onchange={(x) => (rel = x)} />
 				<div class="params">
+					<span class="ph">Numbers to compare</span>
 					{#each PARAMS as p (p)}
 						<label class="chk"
 							><input
@@ -208,7 +215,7 @@
 								checked={chosen.includes(p)}
 								onchange={(e) =>
 									(chosen = (e.currentTarget as HTMLInputElement).checked ? [...chosen, p] : chosen.filter((x) => x !== p))}
-							/>{p.split('.')[1].replaceAll('_', ' ')}</label
+							/>{PARAM_LABEL[p]}</label
 						>
 					{/each}
 				</div>
@@ -216,9 +223,9 @@
 			<div>
 				{#if sensErr}<div class="empty">{sensErr}</div>{/if}
 				{#if sens}
-					<Tornado rows={sens.rows} format={sensFmt} rel={sens.rel} />
+					<Tornado rows={sens.rows} format={sensFmt} rel={sens.rel} label={(p) => PARAM_LABEL[p] ?? p} />
 				{:else if !sensBusy}
-					<div class="empty tall">Pick inputs and an output, then run. About two runs per input.</div>
+					<div class="empty tall">Pick the numbers and a result, then press <b>Compare</b>.</div>
 				{:else}
 					<div class="empty tall">Simulating…</div>
 				{/if}
@@ -280,13 +287,17 @@
 		gap: 6px;
 		margin-top: 10px;
 	}
+	.ph {
+		font-size: 12.5px;
+		color: var(--text-2);
+		margin-bottom: 2px;
+	}
 	.chk {
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		font-size: 12.5px;
 		color: var(--text-2);
-		text-transform: capitalize;
 		cursor: pointer;
 	}
 	.chk input {

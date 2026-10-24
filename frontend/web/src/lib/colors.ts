@@ -47,9 +47,9 @@ export function occupancyStatus(occ: number, diverted = false): Status {
 
 export const STATUS_LABEL: Record<Status, string> = {
 	good: 'Normal',
-	warning: 'Strained',
-	serious: 'Near capacity',
-	critical: 'Diverting / over'
+	warning: 'Busy',
+	serious: 'Nearly full',
+	critical: 'Full, turning patients away'
 };
 
 // Sequential ramps for a dark surface: low values sit near the surface, high values glow.

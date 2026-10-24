@@ -42,6 +42,7 @@ def test_every_scenario_runs(sid):
         assert len(s["occupancy_ward"]) == days and len(s["occupancy_ward"][0]) == len(s["hospitals"])
         assert len(s["access"][0]) == len(r["geo"]["patches"])
         assert r["geo"]["mappable"]
+        assert len(r["geo"]["districts"]["features"]) == len(r["geo"]["patches"])
     else:
         assert r["system"] is None
 

@@ -3,18 +3,31 @@
 	import { num, pct, fixed, days } from '#lib/format.ts';
 	import { COMPARTMENT, LABEL } from '#lib/colors.ts';
 	import Card from '#lib/components/Card.svelte';
+	import More from '#lib/components/More.svelte';
 
 	const d = $derived(app.result!.describe);
 	const disease = $derived(app.detail?.epi.disease ?? {});
 	const pop = $derived(app.detail?.epi.population);
 
 	const STEPS = [
-		{ id: 'seir', name: 'SEIR', text: 'Infections, ward, ICU and deaths by neighborhood and age' },
-		{ id: 'alloc', name: 'Allocation', text: 'Admissions to hospitals by beds · exp(−decay · drive minutes)' },
-		{ id: 'fdna', name: 'FDNA', text: 'Operability from staff, beds and shared services' },
-		{ id: 'reroute', name: 'Rerouting', text: 'Diversion with hysteresis; patients move to open hospitals' },
-		{ id: 'equity', name: 'Equity', text: 'Share of usual care still open, weighted by vulnerability' }
+		{ id: 'seir', name: 'It spreads', text: 'People catch it, fall sick, and some need a hospital bed. Tracked by neighborhood and age.' },
+		{ id: 'alloc', name: 'Patients pick a hospital', text: 'Mostly large hospitals close to home, the way people really choose.' },
+		{ id: 'fdna', name: 'Hospitals feel the strain', text: 'Staff off sick and full beds cut what each hospital can do. Shared services pass problems along.' },
+		{ id: 'reroute', name: 'Full hospitals send patients on', text: 'A full hospital turns new patients away until it has room again.' },
+		{ id: 'equity', name: 'Who loses out', text: 'How much of each neighborhood’s usual hospital care is still open.' }
 	];
+	// The stages a person moves through, in everyday words.
+	const STAGE: Record<string, string> = {
+		S: 'Can catch it',
+		E: 'Caught it, not yet contagious',
+		I: 'Contagious',
+		A: 'Contagious, no symptoms',
+		R: 'Recovered',
+		V: 'Vaccinated',
+		H: 'On a hospital ward',
+		C: 'In intensive care',
+		D: 'Died'
+	};
 
 	const fmtValue = (v: unknown): string => {
 		if (typeof v === 'number') return Math.abs(v) < 1 && v !== 0 ? fixed(v, 3) : fixed(v, 2);
@@ -27,37 +40,38 @@
 	};
 
 	const ASSUMPTIONS = [
-		['Populations', 'Boston neighborhoods from 2020 Census totals, rounded; age split approximate.'],
-		['Places', 'Neighborhood centroids and hospital campuses are approximate coordinates.'],
-		['Beds', 'MassGIS ICU and med-surg beds × 0.35, the share assumed to serve Boston residents; 75% filled by other patients.'],
-		['Travel', 'Straight-line distance × 1.35 road factor at 24 km/h plus 5 minutes.'],
-		['Mixing', 'Prem 2021 US age contacts; neighborhoods coupled by a 2 km distance kernel, 75% of time at home.'],
+		['People', 'Neighborhood populations from the 2020 Census, rounded. The age split is approximate.'],
+		['Places', 'Neighborhood centres and hospital campuses are approximate locations.'],
+		['Beds', 'About a third of each hospital’s beds are counted as serving Boston residents, and three quarters of those are already taken by other patients.'],
+		['Travel', 'Straight-line distance, stretched by a third for real roads, at city driving speed plus 5 minutes.'],
+		['Mixing', 'Published US contact rates between age groups. People spend most of their time near home and mix less with distant neighborhoods.'],
 		['Vulnerability', 'Hand-set weights standing in for a social vulnerability index.'],
-		['FDNA', 'Strengths and criticalities of dependency are illustrative (reference design), not measured.'],
-		['Disease', 'covid_omicron preset with the Massachusetts fit (R₀ 1.95, severity 1.08×, 22% immune on 1 Dec 2021).']
+		['Hospital links', 'How strongly hospitals depend on staff, beds and shared services is illustrative, not measured.'],
+		['Disease', 'Omicron, tuned to Massachusetts admissions: each case infects about 1.95 others at first, and 22% of people were already immune on 1 Dec 2021.']
 	];
 
 	const DATA = [
-		['HHS daily COVID admissions, Massachusetts', 'Calibration and validation of the Omicron wave'],
-		['COVID Tracking Project hospital census (CC BY 4.0)', 'Out-of-sample check, winter 2020–21'],
-		['Prem et al. 2021 contact matrices', 'Age mixing'],
-		['Google COVID-19 Community Mobility', 'Mobility-driven transmission scenario'],
-		['MassGIS hospitals, CMS hospital general information', 'Bed counts and hospital identities'],
-		['CDC PLACES', 'Optional comorbidity multiplier on severity']
+		['HHS daily COVID admissions, Massachusetts', 'Tuning and testing on the Omicron wave'],
+		['COVID Tracking Project hospital counts (CC BY 4.0)', 'An independent test on winter 2020–21'],
+		['Prem et al. 2021 contact matrices', 'How much age groups mix'],
+		['Google COVID-19 Community Mobility', 'The lockdown-style scenario'],
+		['MassGIS hospitals, CMS hospital information', 'Bed counts and which hospital is which'],
+		['City of Boston neighborhood boundaries', 'The shapes on the map'],
+		['CDC PLACES', 'Optional: more severe illness where chronic disease is common']
 	];
 </script>
 
 <div class="page">
 	<div class="page-head">
-		<h1>Model</h1>
+		<h1>How it works</h1>
 		<p>
-			A what-if tool for research and demos: an epidemic wave drives hospital load, hospital disruption propagates
-			through a dependency network, overloaded hospitals divert patients, and the map shows which neighborhoods lose
-			access to care. Public aggregate data only; every assumption below is configurable.
+			A what-if tool for Boston: an outbreak fills hospital beds, strained hospitals start turning patients away, and the
+			map shows which neighborhoods lose their usual care. It uses public data only and every assumption can be changed
+			with <b>What if…?</b>
 		</p>
 	</div>
 
-	<Card title="Daily loop" sub="Each module reads the previous one's frozen snapshot. ICU strain feeds back into SEIR mortality the next day.">
+	<Card title="Every simulated day, five steps" sub="Each step uses the result of the one before.">
 		<div class="flow">
 			{#each STEPS as s, i (s.id)}
 				<div class="step">
@@ -68,17 +82,33 @@
 				{#if i < STEPS.length - 1}<span class="arrow">→</span>{/if}
 			{/each}
 		</div>
-		<div class="feedback"><span></span>FDNA ICU operability → SEIR death rate, one day later</div>
+		<div class="feedback"><span></span>When intensive care is overstretched, more patients die the next day.</div>
 	</Card>
 
 	<div class="grid-2">
-		<Card title="Compartments" sub="People move along these arrows each day, in 4 substeps.">
+		<Card title="The stages a person moves through" sub="Everyone starts able to catch it. Most recover at home; some go to hospital.">
 			<div class="comps">
 				{#each d.compartments as c, i (c)}
-					<span class="comp" style:--c={COMPARTMENT[c] ?? '#888'}><b>{c}</b>{LABEL[c] ?? c}</span>
+					<span class="comp" style:--c={COMPARTMENT[c] ?? '#888'}><i></i>{STAGE[c] ?? LABEL[c] ?? c}</span>
 					{#if i < d.compartments.length - 1}<span class="sep"></span>{/if}
 				{/each}
 			</div>
+		</Card>
+		<Card title="This scenario" sub={app.detail?.title}>
+			<dl class="kv">
+				<dt>People</dt><dd>{num(d.population)} in {d.patches === 1 ? 'one group' : `${d.patches} neighborhoods`}</dd>
+				<dt>Age groups</dt><dd>{pop?.ages.join(' · ')}</dd>
+				<dt>Each case infects at first</dt><dd>about {fixed(d.r0, 2)} others</dd>
+				<dt>From one case to the next</dt><dd>{days(d.generation_time_days)}</dd>
+				<dt>Cases double every</dt><dd>{days(d.doubling_time_days)} at the start</dd>
+				<dt>Already immune</dt><dd>{pct(typeof app.detail?.epi.seeding.immune_share === 'number' ? app.detail.epi.seeding.immune_share : 0)}</dd>
+				{#if app.changeCount}<dt>Your changes</dt><dd>{app.changeCount} setting{app.changeCount === 1 ? '' : 's'} changed</dd>{/if}
+			</dl>
+		</Card>
+	</div>
+
+	<More title="The maths and every disease setting" sub="For readers who want the equations and raw values.">
+		<div class="grid-2">
 			<pre class="eq">λ[p,a] = β(t) Σᵣ W[p,r] Σ_b C[a,b] I[r,b] / N[r,b]
 S → E  λ            E → I  σ = 1 / latent period
 I → H  p_hosp · γ   I → R  (1 − p_hosp) · γ
@@ -86,37 +116,34 @@ H → C  p_icu / LOS_ward      H → R  the rest
 C → D  p_death_icu / LOS_icu C → R  the rest
 γ = 1 / infectious period
 R_eff = ρ(next-generation matrix, today's susceptibles)</pre>
-		</Card>
-		<Card title="Current scenario" sub={app.detail?.title}>
 			<dl class="kv">
-				<dt>Population</dt><dd>{num(d.population)} in {d.patches} {d.patches === 1 ? 'patch' : 'neighborhoods'} × {d.age_groups} ages</dd>
-				<dt>Ages</dt><dd>{pop?.ages.join(' · ')}</dd>
-				<dt>R₀</dt><dd>{fixed(d.r0, 2)}</dd>
 				<dt>Transmission β₀</dt><dd>{fixed(d.transmission_rate, 4)} /day</dd>
 				<dt>Incubation σ</dt><dd>{d.incubation_rate ? `${fixed(d.incubation_rate, 3)} /day` : '–'}</dd>
 				<dt>Recovery γ</dt><dd>{d.recovery_rate ? `${fixed(d.recovery_rate, 3)} /day` : '–'}</dd>
-				<dt>Generation time</dt><dd>{days(d.generation_time_days)}</dd>
-				<dt>Doubling time (R₀)</dt><dd>{days(d.doubling_time_days)}</dd>
 				{#each Object.entries(disease).filter(([k]) => !['r0', 'latent_period', 'infectious_period'].includes(k)) as [k, v] (k)}
 					<dt>{k.replaceAll('_', ' ')}</dt><dd>{fmtValue(v)}</dd>
 				{/each}
-				{#if app.changeCount}<dt>Your changes</dt><dd>{app.changeCount} on top of the file</dd>{/if}
 			</dl>
-		</Card>
-	</div>
+		</div>
+		<p class="muted small">
+			Four substeps a day. Neighborhoods mix through a distance kernel (W), ages through contact matrix C. Hospitals are
+			chosen in proportion to beds × exp(−decay × drive minutes). Hospital function comes from a functional dependency
+			network (FDNA), and diversion switches on and off with hysteresis.
+		</p>
+	</More>
 
 	<div class="grid-2">
-		<Card title="Assumptions in the Boston scenario" sub="Generated by seir/systems/make_boston.py from two CSV tables. Illustrative, not calibrated.">
+		<Card title="What we assumed" sub="Made by seir/systems/make_boston.py from two tables. Illustrative, not tuned to Boston hospitals.">
 			<dl class="kv wide">
 				{#each ASSUMPTIONS as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
 			</dl>
 		</Card>
-		<Card title="Data">
+		<Card title="Where the data comes from">
 			<dl class="kv wide">
 				{#each DATA as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
 			</dl>
 			{#if app.presets}
-				<div class="h">Literature behind the disease presets</div>
+				<div class="h">Research behind the disease settings</div>
 				<ul class="refs">
 					{#each Object.entries(app.presets.sources) as [k, url] (k)}
 						<li><a href={url} target="_blank" rel="noreferrer">{k}</a></li>
@@ -127,9 +154,9 @@ R_eff = ρ(next-generation matrix, today's susceptibles)</pre>
 	</div>
 
 	<p class="muted disclaimer">
-		Research and demonstration only. Not a forecast and not for operational or clinical decisions. Immunity is set at the
-		start ({pct(typeof app.detail?.epi.seeding.immune_share === 'number' ? app.detail.epi.seeding.immune_share : 0)}
-		here); admissions alone cannot separate immunity, R₀ and severity.
+		For research and demonstration only: not a forecast, and not for real hospital or medical decisions. Hospital data
+		alone cannot tell apart how contagious a disease is, how severe it is and how many people were already immune, so
+		those three are partly assumptions.
 	</p>
 </div>
 
@@ -198,17 +225,13 @@ R_eff = ρ(next-generation matrix, today's susceptibles)</pre>
 		color: var(--text-2);
 		border: 1px solid var(--line-2);
 		border-radius: 999px;
-		padding: 3px 10px 3px 4px;
+		padding: 4px 11px 4px 9px;
 	}
-	.comp b {
-		width: 20px;
-		height: 20px;
+	.comp i {
+		width: 10px;
+		height: 10px;
 		border-radius: 50%;
 		background: var(--c);
-		color: #fff;
-		display: grid;
-		place-items: center;
-		font-size: 11px;
 	}
 	.sep {
 		width: 10px;
@@ -229,7 +252,7 @@ R_eff = ρ(next-generation matrix, today's susceptibles)</pre>
 	}
 	.kv {
 		display: grid;
-		grid-template-columns: 150px 1fr;
+		grid-template-columns: 180px 1fr;
 		gap: 6px 16px;
 		margin: 0;
 		font-size: 12.5px;
@@ -267,6 +290,11 @@ R_eff = ρ(next-generation matrix, today's susceptibles)</pre>
 	}
 	.refs a:hover {
 		color: var(--text-1);
+	}
+	.small {
+		font-size: 12px;
+		line-height: 1.55;
+		margin: 0;
 	}
 	.disclaimer {
 		font-size: 12px;

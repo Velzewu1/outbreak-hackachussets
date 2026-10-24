@@ -11,6 +11,7 @@ cascade.epi and turns xarray results into plain JSON arrays.
 """
 from __future__ import annotations
 
+import json
 import math
 import multiprocessing
 import os
@@ -170,15 +171,30 @@ def _places() -> tuple[pd.DataFrame, pd.DataFrame]:
     return nb, hosp
 
 
+@lru_cache(maxsize=1)
+def _districts() -> dict[str, dict]:
+    """Neighborhood outlines by patch name (systems/make_districts.py), if present."""
+    path = ROOT / "systems" / "boston_districts.geojson"
+    if not path.exists():
+        return {}
+    return {f["properties"]["patch"]: f for f in json.loads(path.read_text())["features"]}
+
+
 def _geo(epi: ScenarioConfig, sys_cfg: SystemConfig | None) -> dict:
     nb, hosp = _places()
-    patches = []
+    outlines = _districts()
+    patches, districts = [], []
     for p, n in zip(epi.population.patches, epi.population.N.sum(axis=1)):
         row = nb.loc[ALIASES.get(p, p)] if ALIASES.get(p, p) in nb.index else None
+        outline = outlines.get(ALIASES.get(p, p))
         vuln = sys_cfg.equity.vulnerability.get(p, 1.0) if sys_cfg else 1.0
         patches.append({"id": p, "population": float(n), "vulnerability": vuln,
                         "lat": None if row is None else float(row.lat),
-                        "lon": None if row is None else float(row.lon)})
+                        "lon": None if row is None else float(row.lon),
+                        "label": outline["properties"]["label"] if outline else None})
+        if outline:
+            districts.append({"type": "Feature", "id": len(patches) - 1, "properties": {"patch": p},
+                              "geometry": outline["geometry"]})
     hospitals = []
     if sys_cfg:
         for h in sys_cfg.network.hospitals:
@@ -189,7 +205,8 @@ def _geo(epi: ScenarioConfig, sys_cfg: SystemConfig | None) -> dict:
                               "lat": None if row is None else float(row.lat),
                               "lon": None if row is None else float(row.lon)})
     mappable = all(p["lat"] is not None for p in patches)
-    return {"patches": patches, "hospitals": hospitals, "mappable": mappable}
+    return {"patches": patches, "hospitals": hospitals, "mappable": mappable,
+            "districts": {"type": "FeatureCollection", "features": districts} if districts else None}
 
 
 def _describe(epi: ScenarioConfig) -> dict:

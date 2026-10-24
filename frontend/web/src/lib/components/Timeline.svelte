@@ -100,8 +100,8 @@
 		<div class="head" style:left="{(app.day / Math.max(1, app.nDays - 1)) * 100}%"></div>
 	</div>
 	<div class="legend">
-		<span><i class="a"></i>{app.result?.epi.citywide.inpatients ? 'Inpatients' : 'Infectious'}</span>
-		{#if diversion.some(Boolean)}<span><i class="c"></i>Any hospital diverting</span>{/if}
+		<span><i class="a"></i>{app.result?.epi.citywide.inpatients ? 'People in hospital' : 'People sick'}</span>
+		{#if diversion.some(Boolean)}<span><i class="c"></i>A hospital is full</span>{/if}
 	</div>
 </div>
 

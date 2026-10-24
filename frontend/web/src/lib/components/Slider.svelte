@@ -8,9 +8,11 @@
 		format?: (v: number) => string;
 		changed?: boolean;
 		hint?: string;
+		/** Shown under the label, for settings a newcomer needs explained. */
+		help?: string;
 		onchange: (v: number) => void;
 	}
-	let { label, value, min, max, step = 0.01, format = (v) => String(v), changed = false, hint, onchange }: Props =
+	let { label, value, min, max, step = 0.01, format = (v) => String(v), changed = false, hint, help, onchange }: Props =
 		$props();
 	let local = $state(0);
 	$effect(() => {
@@ -24,6 +26,7 @@
 		<span class="name">{label}{#if changed}<i class="dot" aria-label="changed"></i>{/if}</span>
 		<span class="val">{format(local)}</span>
 	</span>
+	{#if help}<span class="help">{help}</span>{/if}
 	<input
 		type="range"
 		{min}
@@ -92,5 +95,12 @@
 	}
 	input:focus-visible::-webkit-slider-thumb {
 		box-shadow: 0 0 0 3px var(--accent-soft);
+	}
+	.help {
+		display: block;
+		font-size: 11.5px;
+		color: var(--text-3);
+		line-height: 1.4;
+		margin: 2px 0 2px;
 	}
 </style>

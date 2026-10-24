@@ -11,6 +11,7 @@
 	import FdnaGraph from '#lib/components/FdnaGraph.svelte';
 	import Segmented from '#lib/components/Segmented.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import More from '#lib/components/More.svelte';
 
 	const r = $derived(app.result!);
 	const sys = $derived(r.system);
@@ -43,7 +44,7 @@
 	});
 
 	// Access by neighborhood
-	let accessView = $state<'today' | 'worst' | 'weighted'>('weighted');
+	let accessView = $state<'today' | 'worst' | 'weighted'>('worst');
 	const accessItems = $derived.by(() => {
 		if (!sys) return [];
 		return r.geo.patches
@@ -52,7 +53,7 @@
 				const worst = Math.min(...col);
 				const weighted = sys.weighted_loss.reduce((a, row) => a + (row[i] ?? 0), 0);
 				const value = accessView === 'today' ? 1 - (col[t] ?? 1) : accessView === 'worst' ? 1 - worst : weighted;
-				return { id: p.id, label: p.id, value, note: `×${p.vulnerability.toFixed(1)}` };
+				return { id: p.id, label: p.id, value, note: accessView === 'weighted' ? `×${p.vulnerability.toFixed(1)}` : undefined };
 			})
 			.sort((a, b) => b.value - a.value);
 	});
@@ -84,11 +85,11 @@
 
 <div class="page">
 	<div class="page-head">
-		<h1>Hospitals & cascade</h1>
+		<h1>Hospitals</h1>
 		<p>
-			Admissions go to hospitals by a gravity model over drive times. Each hospital's operability comes from an FDNA
-			dependency graph (staff, beds, shared services); hospitals that are full or failing go on diversion and their
-			patients reroute. Access is the share of a neighborhood's usual care that is still open.
+			Patients go to nearby hospitals with free beds. A hospital that is full, or short of staff, turns new patients
+			away and they travel further. This page shows which hospitals fill up and which neighborhoods lose their usual
+			hospital.
 		</p>
 	</div>
 
@@ -103,23 +104,20 @@
 	{:else}
 		<Card>
 			<div class="stats">
-				<Stat label="Peak ICU occupancy" value={pct(sys.summary.peak_occupancy_icu)} tone={occupancyStatus(sys.summary.peak_occupancy_icu)} />
-				<Stat label="Hospital-days diverting" value={num(sys.summary.hospital_days_on_diversion)} />
-				<Stat label="Patients diverted" value={num(sys.summary.diverted_patients)} />
-				<Stat label="Placed over capacity" value={num(sys.summary.overflow_patients)} hint="overflow" />
-				<Stat label="Person-days lost care" value={num(sys.summary.lost_access_person_days)} hint="without usual hospital" />
-				<Stat label="Weighted access loss" value={num(sys.summary.weighted_access_loss)} hint="× vulnerability" />
+				<Stat label="ICU at its fullest" value={pct(sys.summary.peak_occupancy_icu)} tone={occupancyStatus(sys.summary.peak_occupancy_icu)} />
+				<Stat label="Days a hospital was full" value={num(sys.summary.hospital_days_on_diversion)} hint="added up over hospitals" />
+				<Stat label="Patients sent elsewhere" value={num(sys.summary.diverted_patients)} />
+				<Stat label="Patients with no free bed" value={num(sys.summary.overflow_patients)} hint="placed over capacity" />
 			</div>
 		</Card>
 
-		<Card title="Hospital load over time" sub="Rows are hospitals, columns are days. A white tick on top marks a day on diversion.">
+		<Card title="How full each hospital is, day by day" sub="Rows are hospitals, columns are days; brighter is fuller. A white tick on top marks a day the hospital was full and turning patients away. Click a row for its details.">
 			{#snippet actions()}
 				<Segmented
 					options={[
-						{ value: 'occ', label: 'Fuller of ward/ICU' },
+						{ value: 'occ', label: 'Ward or ICU' },
 						{ value: 'ward', label: 'Ward' },
-						{ value: 'icu', label: 'ICU' },
-						{ value: 'P', label: 'Operability lost' }
+						{ value: 'icu', label: 'ICU' }
 					]}
 					value={heatView}
 					onchange={(v) => (heatView = v)}
@@ -139,12 +137,12 @@
 				rowHeight={24}
 				onrow={(h) => (app.selectedHospital = h)}
 				onscrub={scrub}
-				legend={heatView === 'P' ? 'operability lost' : 'occupancy'}
+				legend={heatView === 'P' ? 'operability lost' : 'beds in use'}
 			/>
 		</Card>
 
 		<div class="grid-2">
-			<Card title={hgeo?.name ?? hid} sub={hgeo ? `${num(hgeo.ward_beds)} ward + ${num(hgeo.icu_beds)} ICU beds assumed for Boston residents · ${pct(hgeo.baseline_occupancy)} filled by other patients` : ''}>
+			<Card title={hgeo?.name ?? hid} sub={hgeo ? `${num(hgeo.ward_beds)} ward and ${num(hgeo.icu_beds)} ICU beds for Boston residents (assumed)` : ''}>
 				{#snippet actions()}
 					{#if hState}
 						<span class="tag"><i class="dot" style:background={STATUS[hState.status]}></i>{STATUS_LABEL[hState.status]}</span>
@@ -152,10 +150,9 @@
 				{/snippet}
 				{#if hState}
 					<div class="stats mini">
-						<Stat label="Ward" value={pct(hState.ward)} />
-						<Stat label="ICU" value={pct(hState.icu)} />
-						<Stat label="Operability" value={`${Math.round(hState.P)}%`} />
-						<Stat label="Days diverting" value={String(hState.divDays)} />
+						<Stat label="Ward beds in use" value={pct(hState.ward)} />
+						<Stat label="ICU beds in use" value={pct(hState.icu)} />
+						<Stat label="Days full" value={String(hState.divDays)} />
 					</div>
 				{/if}
 				<LineChart
@@ -165,115 +162,116 @@
 					onscrub={scrub}
 					yMin={0}
 					yFormat={(v) => pct(v)}
-					refLine={{ value: occOn, label: `divert above ${pct(occOn)}` }}
+					refLine={{ value: occOn, label: `full at ${pct(occOn)}` }}
 					series={[
-						{ id: 'ward', label: 'Ward occupancy', values: sys.occupancy_ward.map((row) => row[hj]), color: COMPARTMENT.H },
-						{ id: 'icu', label: 'ICU occupancy', values: sys.occupancy_icu.map((row) => row[hj]), color: COMPARTMENT.C }
+						{ id: 'ward', label: 'Ward beds in use', values: sys.occupancy_ward.map((row) => row[hj]), color: COMPARTMENT.H },
+						{ id: 'icu', label: 'ICU beds in use', values: sys.occupancy_icu.map((row) => row[hj]), color: COMPARTMENT.C }
 					]}
 				/>
 			</Card>
-			<Card title="Operability" sub="FDNA output for the selected hospital (100 = fully working). Diversion starts when it drops below the threshold.">
-				<LineChart
-					dates={e.dates}
-					height={248}
-					marker={t}
-					onscrub={scrub}
-					yMin={0}
-					yMax={100}
-					yFormat={(v) => `${v.toFixed(0)}`}
-					refLine={{ value: Number(app.systemValue('rerouting.p_on') ?? 40), label: 'diversion threshold' }}
-					series={[
-						{ id: 'P', label: `${hid} operability`, values: sys.operability.map((row) => row[hj]), color: '#c3c2b7', area: true },
-						...['staff', 'icu', 'ward']
-							.map((k) => `${hid}.${k}`)
-							.filter((n) => sys.nodes.includes(n))
-							.map((n, k) => ({
-								id: n,
-								label: n.split('.')[1],
-								values: sys.node_operability.map((row) => row[sys.nodes.indexOf(n)]),
-								color: ['#3987e5', '#d95926', '#9085e9'][k],
-								width: 1.5
-							}))
-					]}
-				/>
-			</Card>
-		</div>
-
-		<Card title="Dependency network (FDNA)" sub="Operability on the selected day. Grey nodes are fully working; amber to red nodes are degraded.">
-			<FdnaGraph {sys} {t} selected={app.events.at(-1)?.node ?? null} onnode={knockout} />
-			{#if app.events.length}
-				<div class="evs">
-					{#each app.events as ev (ev.node)}
-						<span class="tag"><Icon name="bolt" size={11} /> {ev.node} capped at {ev.value}% · days {ev.start}–{ev.end ?? 'end'}
-							<button class="x" onclick={() => app.removeEvent(ev.node)} aria-label="Remove"><Icon name="x" size={10} /></button></span
-						>
-					{/each}
-				</div>
-			{/if}
-		</Card>
-
-		<div class="grid-2">
-			<Card title="Who loses access" sub="Usual hospital care that is closed, diverting or degraded. Right: the neighborhood's vulnerability weight.">
+			<Card title="Who loses their usual hospital" sub="Share of a neighborhood's usual hospital care that is full, closed or short-staffed.">
 				{#snippet actions()}
 					<Segmented
 						options={[
-							{ value: 'weighted', label: 'Weighted total' },
 							{ value: 'worst', label: 'Worst day' },
 							{ value: 'today', label: 'Today' }
 						]}
-						value={accessView}
+						value={accessView === 'weighted' ? 'worst' : accessView}
 						onchange={(v) => (accessView = v)}
 					/>
 				{/snippet}
 				<BarList
 					items={accessItems}
-					format={accessView === 'weighted' ? (v) => num(v) : (v) => pct(v, 1)}
+					format={(v) => pct(v, 0)}
 					color="#f2a35e"
 					selected={app.selectedPatch}
 					onselect={(id) => (app.selectedPatch = app.selectedPatch === id ? null : id)}
 				/>
 			</Card>
-			<Card title="Rerouting" sub="Patients moved away from diverting hospitals, and patients placed above free capacity, per day.">
-				<LineChart
-					dates={e.dates}
-					height={260}
-					marker={t}
-					onscrub={scrub}
-					yMin={0}
-					yFormat={(v) => num(v, 1)}
-					series={[
-						{ id: 'div', label: 'Diverted', values: sys.diverted_patients, color: '#d95926' },
-						{ id: 'over', label: 'Over capacity', values: sys.overflow, color: '#e66767', dashed: true }
-					]}
-				/>
-			</Card>
 		</div>
 
-		<Card title="Criticality" sub="Knock each FDNA node out for the whole run and rank by the extra vulnerability-weighted access loss it causes.">
-			{#snippet actions()}
-				<button class="btn" class:primary={!crit} onclick={runCriticality} disabled={critBusy}>
-					{critBusy ? 'Running sweep…' : crit ? 'Re-run' : 'Rank nodes'}
-				</button>
-			{/snippet}
-			{#if critErr}<div class="empty">{critErr}</div>{/if}
-			{#if crit}
-				<BarList
-					items={crit.slice(0, 14).map((c) => ({ id: c.node, label: c.node, value: c.extra_loss }))}
-					format={(v) => num(v)}
-					color={STATUS.critical}
-					onselect={(n) => knockout(n)}
-				/>
-				<p class="muted foot">Click a node to add a 4-week knockout around the selected day and watch the cascade.</p>
-			{:else if !critBusy}
-				<div class="empty">One run per node, a few seconds in total.</div>
-			{/if}
-		</Card>
+		<More title="What makes a hospital fail" sub="Hospitals depend on staff, beds and shared services. Knock a part out and watch the knock-on effects.">
+			<Card title="Dependency network" sub="How much of each part is working on the selected day: grey is fine, amber to red is struggling. Click any part to knock it out for four weeks around this day.">
+				<FdnaGraph {sys} {t} selected={app.events.at(-1)?.node ?? null} onnode={knockout} />
+				{#if app.events.length}
+					<div class="evs">
+						{#each app.events as ev (ev.node)}
+							<span class="tag"><Icon name="bolt" size={11} /> {ev.node} at {ev.value}% · days {ev.start}–{ev.end ?? 'end'}
+								<button class="x" onclick={() => app.removeEvent(ev.node)} aria-label="Remove"><Icon name="x" size={10} /></button></span
+							>
+						{/each}
+					</div>
+				{/if}
+			</Card>
+
+			<div class="grid-2">
+				<Card title={`How much of ${hid} is working`} sub="100 means fully working (operability). Below the line the hospital turns patients away.">
+					<LineChart
+						dates={e.dates}
+						height={230}
+						marker={t}
+						onscrub={scrub}
+						yMin={0}
+						yMax={100}
+						yFormat={(v) => `${v.toFixed(0)}`}
+						refLine={{ value: Number(app.systemValue('rerouting.p_on') ?? 40), label: 'turns patients away' }}
+						series={[
+							{ id: 'P', label: `${hid} overall`, values: sys.operability.map((row) => row[hj]), color: '#c3c2b7', area: true },
+							...['staff', 'icu', 'ward']
+								.map((k) => `${hid}.${k}`)
+								.filter((n) => sys.nodes.includes(n))
+								.map((n, k) => ({
+									id: n,
+									label: n.split('.')[1],
+									values: sys.node_operability.map((row) => row[sys.nodes.indexOf(n)]),
+									color: ['#3987e5', '#d95926', '#9085e9'][k],
+									width: 1.5
+								}))
+						]}
+					/>
+				</Card>
+				<Card title="Patients sent elsewhere, per day" sub="Moved away from full hospitals, and placed where no bed was free.">
+					<LineChart
+						dates={e.dates}
+						height={230}
+						marker={t}
+						onscrub={scrub}
+						yMin={0}
+						yFormat={(v) => num(v, 1)}
+						series={[
+							{ id: 'div', label: 'Sent elsewhere', values: sys.diverted_patients, color: '#d95926' },
+							{ id: 'over', label: 'No free bed', values: sys.overflow, color: '#e66767', dashed: true }
+						]}
+					/>
+				</Card>
+			</div>
+
+			<Card title="Which parts matter most" sub="Knock out each part for the whole run, one at a time, and rank by how much extra access to care is lost (weighted by neighborhood vulnerability).">
+				{#snippet actions()}
+					<button class="btn" class:primary={!crit} onclick={runCriticality} disabled={critBusy}>
+						{critBusy ? 'Running…' : crit ? 'Re-run' : 'Rank the parts'}
+					</button>
+				{/snippet}
+				{#if critErr}<div class="empty">{critErr}</div>{/if}
+				{#if crit}
+					<BarList
+						items={crit.slice(0, 14).map((c) => ({ id: c.node, label: c.node, value: c.extra_loss }))}
+						format={(v) => num(v)}
+						color={STATUS.critical}
+						onselect={(n) => knockout(n)}
+					/>
+					<p class="muted foot">Click a part to knock it out for four weeks around the selected day.</p>
+				{:else if !critBusy}
+					<div class="empty">One run per part, a few seconds in total.</div>
+				{/if}
+			</Card>
+		</More>
 	{/if}
 </div>
 
 <style>
 	.mini {
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		margin-bottom: 14px;
 	}
 	.dot {
