@@ -20,11 +20,13 @@
 
 <script lang="ts">
 	import { scaleLinear, scaleUtc } from 'd3-scale';
-	import { area as d3area, line as d3line, curveMonotoneX } from 'd3-shape';
+	import { area as d3area, line as d3line, curveLinear, curveMonotoneX } from 'd3-shape';
 	import { parseDate, shortDate, num } from '#lib/format.ts';
 
 	interface Props {
-		dates: string[];
+		/** ISO dates for a time axis; or give `labels` for evenly spaced steps such as weeks. */
+		dates?: string[];
+		labels?: string[];
 		series: LineSeries[];
 		bands?: Band[];
 		height?: number;
@@ -39,7 +41,8 @@
 	}
 
 	let {
-		dates,
+		dates = [],
+		labels,
 		series,
 		bands = [],
 		height = 220,
@@ -61,12 +64,19 @@
 	const iw = $derived(Math.max(10, width - m.left - m.right));
 	const ih = $derived(Math.max(10, height - m.top - m.bottom));
 
-	const times = $derived(dates.map((d) => parseDate(d) as Date));
+	const stepped = $derived(labels !== undefined);
+	const n = $derived(stepped ? labels!.length : dates.length);
+	const times = $derived(stepped ? [] : dates.map((d) => parseDate(d) as Date));
 	const x = $derived(
 		scaleUtc()
 			.domain([times[0] ?? new Date(), times[times.length - 1] ?? new Date()])
 			.range([0, iw])
 	);
+	const xi = $derived(scaleLinear().domain([0, Math.max(1, n - 1)]).range([0, iw]));
+	/** x position of point i on either kind of axis */
+	const px = (i: number) => (stepped ? xi(i) : x(times[i]));
+	// weekly steps are discrete: join them with straight lines so a jump stays a jump
+	const curve = $derived(stepped ? curveLinear : curveMonotoneX);
 
 	const extent = $derived.by(() => {
 		let lo = Infinity,
@@ -94,35 +104,42 @@
 	const lineGen = $derived(
 		d3line<number | null>()
 			.defined((v) => v !== null && Number.isFinite(v))
-			.x((_, i) => x(times[i]))
+			.x((_, i) => px(i))
 			.y((v) => y(v as number))
-			.curve(curveMonotoneX)
+			.curve(curve)
 	);
 	const areaGen = $derived(
 		d3area<number | null>()
 			.defined((v) => v !== null && Number.isFinite(v))
-			.x((_, i) => x(times[i]))
+			.x((_, i) => px(i))
 			.y0(ih)
 			.y1((v) => y(v as number))
-			.curve(curveMonotoneX)
+			.curve(curve)
 	);
 	function bandPath(b: Band) {
 		const gen = d3area<number>()
 			.defined((i) => b.lo[i] !== null && b.hi[i] !== null)
-			.x((i) => x(times[i]))
+			.x((i) => px(i))
 			.y0((i) => y(b.lo[i] as number))
 			.y1((i) => y(b.hi[i] as number))
-			.curve(curveMonotoneX);
-		return gen(dates.map((_, i) => i)) ?? '';
+			.curve(curve);
+		return gen(Array.from({ length: n }, (_, i) => i)) ?? '';
 	}
 
 	const yTicks = $derived(y.ticks(4));
 	const xt = $derived(x.ticks(Math.max(4, Math.min(xTicks + 2, Math.floor(iw / 70)))));
+	// stepped axis: every label that fits, always including the first and last
+	const xs = $derived.by(() => {
+		if (!stepped || !n) return [];
+		const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(iw / 64))));
+		return Array.from({ length: n }, (_, i) => i).filter((i) => i % every === 0 || i === n - 1);
+	});
 
 	function indexAt(evt: PointerEvent) {
 		const svg = (evt.currentTarget as SVGElement).getBoundingClientRect();
-		const px = evt.clientX - svg.left - m.left;
-		const t = x.invert(Math.max(0, Math.min(iw, px))).getTime();
+		const at = Math.max(0, Math.min(iw, evt.clientX - svg.left - m.left));
+		if (stepped) return Math.max(0, Math.min(n - 1, Math.round(xi.invert(at))));
+		const t = x.invert(at).getTime();
 		let best = 0;
 		for (let i = 0; i < times.length; i++) {
 			if (Math.abs(times[i].getTime() - t) < Math.abs(times[best].getTime() - t)) best = i;
@@ -143,7 +160,7 @@
 
 	const shown = $derived(series.filter((s) => !s.hideInTooltip && !s.muted));
 	const legendItems = $derived(shown.length > 1 && legend ? shown : []);
-	const tipLeft = $derived(hover === null ? 0 : m.left + x(times[hover]));
+	const tipLeft = $derived(hover === null ? 0 : m.left + px(hover));
 </script>
 
 <div class="chart" bind:clientWidth={width}>
@@ -172,11 +189,17 @@
 				<line class="grid" x1="0" x2={iw} y1={y(t)} y2={y(t)} />
 				<text class="tick" x="-8" y={y(t)} dy="0.32em" text-anchor="end">{yFormat(t)}</text>
 			{/each}
-			{#each xt as t (t.getTime())}
-				<text class="tick" x={x(t)} y={ih + 16} text-anchor="middle"
-					>{t.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</text
-				>
-			{/each}
+			{#if stepped}
+				{#each xs as i (i)}
+					<text class="tick" x={xi(i)} y={ih + 16} text-anchor="middle">{labels![i]}</text>
+				{/each}
+			{:else}
+				{#each xt as t (t.getTime())}
+					<text class="tick" x={x(t)} y={ih + 16} text-anchor="middle"
+						>{t.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</text
+					>
+				{/each}
+			{/if}
 			<line class="axis" x1="0" x2={iw} y1={ih} y2={ih} />
 
 			{#each bands as b, i (i)}
@@ -206,15 +229,15 @@
 				/>
 			{/each}
 
-			{#if marker !== null && marker !== undefined && times[marker]}
-				<line class="marker" x1={x(times[marker])} x2={x(times[marker])} y1="0" y2={ih} />
+			{#if marker !== null && marker !== undefined && marker < n}
+				<line class="marker" x1={px(marker)} x2={px(marker)} y1="0" y2={ih} />
 			{/if}
 			{#if hover !== null}
-				<line class="cross" x1={x(times[hover])} x2={x(times[hover])} y1="0" y2={ih} />
+				<line class="cross" x1={px(hover)} x2={px(hover)} y1="0" y2={ih} />
 				{#each shown as s (s.id)}
 					{#if s.values[hover] !== null && s.values[hover] !== undefined}
 						<circle
-							cx={x(times[hover])}
+							cx={px(hover)}
 							cy={y(s.values[hover] as number)}
 							r="4"
 							fill={s.color}
@@ -228,7 +251,7 @@
 	</svg>
 	{#if hover !== null}
 		<div class="tip" style:left="{tipLeft}px" class:flip={tipLeft > width * 0.6}>
-			<div class="tipdate">{shortDate(dates[hover])}</div>
+			<div class="tipdate">{stepped ? labels![hover] : shortDate(dates[hover])}</div>
 			{#each shown as s (s.id)}
 				<div class="tiprow">
 					<i style:background={s.color}></i><span>{s.label}</span><b

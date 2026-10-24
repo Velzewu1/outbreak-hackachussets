@@ -1,278 +1,317 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, type ValidationSeries } from '#lib/api.ts';
-	import { num, pct, fixed } from '#lib/format.ts';
-	import { COMPARTMENT } from '#lib/colors.ts';
+	import { rn } from '#lib/rn.svelte.ts';
+	import { fixed, longDate, shortDate } from '#lib/format.ts';
+	import type { Strategy } from '#lib/rn-api.ts';
 	import Card from '#lib/components/Card.svelte';
 	import LineChart from '#lib/components/LineChart.svelte';
-	import Slider from '#lib/components/Slider.svelte';
+	import Segmented from '#lib/components/Segmented.svelte';
 	import More from '#lib/components/More.svelte';
 
-	let data = $state<Record<string, ValidationSeries> | null>(null);
-	let busy = $state(false);
-	let err = $state<string | null>(null);
-	let r0 = $state(1.95);
-	let hosp = $state(1.08);
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	onMount(() => rn.loadEvaluation());
 
-	async function load() {
-		busy = true;
-		try {
-			const omicron: Record<string, unknown> = {};
-			if (Math.abs(r0 - 1.95) > 1e-9) omicron['disease.r0'] = r0;
-			if (Math.abs(hosp - 1.08) > 1e-9) omicron['disease.hosp_scale'] = hosp;
-			data = await api.validation({ omicron, winter: {} });
-			err = null;
-		} catch (e) {
-			err = (e as Error).message;
-		} finally {
-			busy = false;
-		}
-	}
-	function later() {
-		clearTimeout(timer);
-		timer = setTimeout(load, 200);
-	}
-	onMount(load);
-
-	const ORDER = ['omicron', 'winter_icu', 'winter_inpatients'];
-	const COLORS: Record<string, string> = { omicron: COMPARTMENT.H, winter_icu: COMPARTMENT.C, winter_inpatients: COMPARTMENT.H };
-	const PANEL: Record<string, { title: string; sub: string }> = {
-		omicron: {
-			title: 'Omicron wave, winter 2021–22',
-			sub: 'New hospital admissions each week. The model was tuned to this wave, so a close match is expected.'
+	const e = $derived(rn.evaluation);
+	const ok = $derived(e?.status === 'verified');
+	type Which = 'fixed_origin' | 'rolling_origin';
+	let which = $state<Which>('rolling_origin');
+	const strat = $derived<Strategy | undefined>(e?.[which]);
+	const facilities = $derived(e?.facilities ?? {});
+	const ccns = $derived(Object.keys(facilities).sort((a, b) => facilities[a].name.localeCompare(facilities[b].name)));
+	let ccn = $state('');
+	$effect(() => {
+		if (!ccn && ccns.length) ccn = ccns.find((c) => facilities[c].hospitals.includes('MGH')) ?? ccns[0];
+	});
+	const rows = $derived((strat?.rows ?? []).filter((x) => x.ccn === ccn).sort((a, b) => a.target.localeCompare(b.target)));
+	// every test week, so a week this hospital didn't report shows as a gap, not a straight line
+	const targets = $derived([...new Set((strat?.rows ?? []).map((x) => x.target))].sort());
+	const byTarget = $derived(new Map(rows.map((x) => [x.target, x])));
+	const col = (k: 'observed' | 'model' | 'persistence') => targets.map((t) => byTarget.get(t)?.[k] ?? null);
+	const verified = (s: Strategy | undefined) => ok && !!s && s.forecast_pairs > 0;
+	const STRATS = $derived<{ key: Which; title: string; plain: string }[]>([
+		{
+			key: 'fixed_origin',
+			title: 'One run, read ahead',
+			plain: `Fit on the first ${e?.train_weeks ?? '–'} weeks, run once, compare the next ${e?.holdout_weeks ?? '–'} weeks.`
 		},
-		winter_icu: {
-			title: 'Winter 2020–21: patients in intensive care',
-			sub: 'The model never saw this data, which makes it a fair test.'
-		},
-		winter_inpatients: {
-			title: 'Winter 2020–21: all patients in hospital',
-			sub: 'Also never seen. The model comes in too low here; the note at the bottom says why.'
-		}
-	};
-	// The scorer's check names, said plainly.
-	const CHECK: Record<string, string> = {
-		'weeks within +-40%': 'Weeks within 40% of reality',
-		'peak week offset': 'Busiest week lands on time',
-		'peak height error': 'Height of the peak'
-	};
-	const BAR: Record<string, string> = {
-		'>= 60% of weeks': 'needs 60% of weeks or more',
-		'within +-1': 'needs to be within a week',
-		'within +-25%': 'needs to be within 25%'
-	};
-	const SCORES = [
-		{ k: 'mae', label: 'Mean abs. error', f: (v: number) => num(v, 1) },
-		{ k: 'rmse', label: 'RMSE', f: (v: number) => num(v, 1) },
-		{ k: 'mape', label: 'Mean abs. % error', f: (v: number) => pct(v, 0) },
-		{ k: 'log_rmse', label: 'Log RMSE', f: (v: number) => fixed(v, 3) },
-		{ k: 'bias', label: 'Bias', f: (v: number) => num(v, 1) }
-	];
-	const checkValue = (name: string, v: number) =>
-		name.startsWith('weeks')
-			? pct(v)
-			: name.includes('offset')
-				? v === 0
-					? 'same week'
-					: `${Math.abs(v)} wk ${v > 0 ? 'late' : 'early'}`
-				: `${pct(Math.abs(v), 0)} ${v < 0 ? 'low' : 'high'}`;
+		{ key: 'rolling_origin', title: 'One week ahead, refit each week', plain: 'Each week, refit on data up to that week only, then predict the next week.' }
+	]);
+	const perFacility = $derived(
+		Object.entries(e?.fixed_origin?.per_facility ?? {})
+			.map(([c, x]) => ({ ccn: c, name: facilities[c]?.name ?? c, ...x }))
+			.sort((a, b) => b.model_mae - a.model_mae)
+	);
+	const changedFromFit = $derived(rn.changeCount > 0 || rn.dataset !== 'real');
 </script>
 
 <div class="page">
 	<div class="page-head">
 		<h1>Tested on real data</h1>
 		<p>
-			Does the model match what really happened? Here it replays two Massachusetts COVID waves and is laid over the real
-			hospital numbers. As a yardstick there is also a lazy guess, “this week will look like last week”, which gets to
-			peek at the real numbers; the model does not.
+			We asked the model to predict COVID patients in beds at each Suffolk County hospital for weeks it had not seen, using
+			federal HHS hospital reports from October 2020 to May 2021, and compared it with the simplest possible guess: next week
+			looks like this week.
 		</p>
 	</div>
 
-	<Card title="Try to break the fit" sub="The Omicron match comes from tuning two numbers. Move them and watch the match get worse.">
-		<div class="knobs">
-			<Slider label="How contagious (R₀)" value={r0} min={1.2} max={3} step={0.05} format={(v) => v.toFixed(2)} changed={Math.abs(r0 - 1.95) > 1e-9} onchange={(v) => ((r0 = v), later())} />
-			<Slider label="How severe" value={hosp} min={0.3} max={3} step={0.02} format={(v) => `${v.toFixed(2)}×`} changed={Math.abs(hosp - 1.08) > 1e-9} onchange={(v) => ((hosp = v), later())} />
-			<button class="btn" onclick={() => ((r0 = 1.95), (hosp = 1.08), load())} disabled={busy}>Back to the tuned values</button>
+	{#if !e}
+		<Card>
+			{#if rn.evalError}
+				<p class="empty">The backtest isn't available: {rn.evalError}</p>
+			{:else}
+				<p class="empty"><span class="spin"></span> Running the backtest on the real data. The first time takes about 20 seconds.</p>
+			{/if}
+		</Card>
+	{:else if !ok}
+		<Card title="No historical test available">
+			<p class="plain">
+				The backtest hasn't been verified ({e.reason ?? e.status}), so no accuracy numbers are shown. Run
+				<code>PYTHONPATH=. python scripts/run_backtest.py</code> from the repository root to compute it.
+			</p>
+		</Card>
+	{:else}
+		<div class="verdict">
+			<b>The model loses to the simple guess.</b>
+			In both tests its typical weekly miss is several times larger than "next week looks like this week". We report it as
+			measured, with no tuning to the test weeks. The model is for exploring what-ifs, not for forecasting.
 		</div>
-	</Card>
 
-	{#if err}<Card><div class="empty">{err}</div></Card>{/if}
+		<div class="grid-2">
+			{#each STRATS as s (s.key)}
+				{@const st = e[s.key]}
+				<Card title={s.title} sub={s.plain}>
+					{#if verified(st)}
+						<div class="heads">
+							<div class="h"><span>Model's typical miss</span><b class="bad">{fixed(st!.model_mae_beds, 1)}</b><small>beds per hospital-week</small></div>
+							<div class="h"><span>Simple guess's miss</span><b>{fixed(st!.persistence_mae_beds, 1)}</b><small>beds per hospital-week</small></div>
+							<div class="h"><span>Weeks compared</span><b>{st!.forecast_pairs}</b><small>hospital-weeks</small></div>
+						</div>
+					{:else}
+						<p class="empty">No numbers: this test isn't verified or compared no weeks.</p>
+					{/if}
+				</Card>
+			{/each}
+		</div>
 
-	{#if data}
-		{#each ORDER as key (key)}
-			{@const v = data[key]}
-			{@const m = v.score.mae}
-			{@const n = v.naive_score.mae}
-			<Card title={PANEL[key].title} sub={PANEL[key].sub}>
-				{#snippet actions()}
-					<span class="tag" class:pass={v.passed} class:fail={!v.passed}>{v.passed ? 'Passes' : 'Misses'}</span>
-				{/snippet}
-				<div class="vgrid">
-					<LineChart
-						dates={v.weeks}
-						height={250}
-						yMin={0}
-						series={[
-							{ id: 'obs', label: 'What happened', values: v.observed, color: '#f0efec' },
-							{ id: 'model', label: 'Model', values: v.model, color: COLORS[key] },
-							{ id: 'naive', label: 'Lazy guess (last week)', values: v.naive, color: '#898781', dashed: true, width: 1.5 }
-						]}
-					/>
-					<div class="side">
-						<div class="h">Checks</div>
-						{#each v.checks.checks as c (c.name)}
-							<div class="check">
-								<span class="mark" class:ok={c.passed}>{c.passed ? '✓' : '✕'}</span>
-								<span class="cn">{CHECK[c.name] ?? c.name}<small>{BAR[c.bar] ?? c.bar}</small></span>
-								<b>{checkValue(c.name, c.value)}</b>
-							</div>
-						{/each}
-						{#if m !== null && n !== null}
-							<p class="miss">
-								Typical weekly miss: <b>{num(m)}</b> for the model, <b>{num(n)}</b> for the lazy guess.
-								{m < n ? 'The model does better.' : 'The lazy guess does better here.'}
-							</p>
-						{/if}
-					</div>
-				</div>
-			</Card>
-		{/each}
+		{#if changedFromFit}
+			<p class="caveat">
+				These numbers belong to the model as fitted (R₀ {fixed(e.fixed_origin?.fit?.fitted_r0, 2)} on the real data), not to
+				the settings you are exploring now.
+			</p>
+		{/if}
 
-		<p class="muted note">
-			Reading it honestly: the lazy guess has seen last week's real number, while the model sees nothing after its start
-			date, and it was never tuned to the winter 2020–21 data at all. It comes in too low on all patients in hospital that
-			winter because real patients stayed about 8.5 days for each admission, against the model's 6.8. Either stays were
-			longer, or the hospital count includes patients the admissions data leaves out. The model keeps the published
-			length of stay rather than being tuned to pass this test.
-		</p>
+		<Card title="One hospital, week by week" sub="COVID patients in beds, weekly average. Gaps are weeks the hospital didn't report.">
+			{#snippet actions()}
+				<Segmented options={STRATS.map((s) => ({ value: s.key, label: s.key === 'fixed_origin' ? 'One run' : 'Week ahead' }))} value={which} onchange={(w) => (which = w)} />
+			{/snippet}
+			<div class="picker">
+				{#each ccns as c (c)}
+					<button class:on={c === ccn} onclick={() => (ccn = c)}>{facilities[c].name}</button>
+				{/each}
+			</div>
+			{#if rows.length}
+				<LineChart
+					dates={targets}
+					height={250}
+					series={[
+						{ id: 'obs', label: 'Reported', values: col('observed'), color: '#f0efec', width: 2.5 },
+						{ id: 'model', label: 'Model', values: col('model'), color: '#d55181' },
+						{ id: 'naive', label: 'Next week = this week', values: col('persistence'), color: '#3987e5', dashed: true }
+					]}
+				/>
+			{:else}
+				<p class="empty">No valid reported weeks for this hospital in this test.</p>
+			{/if}
+		</Card>
 
-		<More title="Error scores in detail" sub="Standard forecast-error measures for each panel, model against the lazy guess.">
+		<Card title="Typical miss by hospital" sub="One-run test, beds per week. Lower is better.">
 			<table>
-				<thead>
-					<tr><th></th>{#each ORDER as key (key)}<th colspan="2">{PANEL[key].title}</th>{/each}</tr>
-					<tr><th></th>{#each ORDER as key (key)}<th>model</th><th>lazy</th>{/each}</tr>
-				</thead>
+				<thead><tr><th>Hospital</th><th>Weeks</th><th>Model</th><th>Simple guess</th></tr></thead>
 				<tbody>
-					{#each SCORES as s (s.k)}
+					{#each perFacility as f (f.ccn)}
 						<tr>
-							<td>{s.label}</td>
-							{#each ORDER as key (key)}
-								{@const m = data[key].score[s.k]}
-								{@const n = data[key].naive_score[s.k]}
-								<td class:win={m !== null && n !== null && s.k !== 'bias' && Math.abs(m) < Math.abs(n)}>{m === null ? '–' : s.f(m)}</td>
-								<td>{n === null ? '–' : s.f(n)}</td>
-							{/each}
+							<td>{f.name}</td>
+							<td>{f.n}</td>
+							<td class="bad">{fixed(f.model_mae, 1)}</td>
+							<td>{fixed(f.persistence_mae, 1)}</td>
 						</tr>
 					{/each}
 				</tbody>
 			</table>
-			<p class="muted small">Green marks where the model's error is smaller. Bias is below zero when the model runs low.</p>
+			<p class="muted small">Both Beth Israel Deaconess campuses report under one federal ID, so they are compared together.</p>
+		</Card>
+
+		<More title="How the test was run" sub="Periods, counts and rules">
+			<div class="kvs">
+				<div class="kv"><span>Data</span><b><a href={e.source_url} target="_blank" rel="noreferrer">HHS COVID-19 hospital capacity by facility</a></b></div>
+				<div class="kv"><span>Period</span><b>{longDate(e.period?.[0])} to {longDate(e.period?.[1])} · {e.calendar_weeks} weeks</b></div>
+				<div class="kv"><span>Fitting weeks / test weeks</span><b>{e.train_weeks} / {e.holdout_weeks}</b></div>
+				<div class="kv"><span>Hospitals matched</span><b>{e.matched_facilities}</b></div>
+				<div class="kv"><span>Hospital-weeks dropped (missing or suppressed)</span><b>{e.excluded_records}</b></div>
+				<div class="kv"><span>Minimum reporting days per week</span><b>{e.min_coverage_days}</b></div>
+				<div class="kv"><span>Week-ahead test uses only past data</span><b>{e.rolling_origin?.leakage_free ? 'yes' : 'no'}</b></div>
+				<div class="kv"><span>Fitted R₀ (one-run test)</span><b>{fixed(e.fixed_origin?.fit?.fitted_r0, 2)}</b></div>
+				<div class="kv"><span>All hospitals together: model / simple guess</span><b>{fixed(e.fixed_origin?.regional_model_mae_beds, 1)} / {fixed(e.fixed_origin?.regional_persistence_mae_beds, 1)} beds</b></div>
+			</div>
+			<p class="muted small">{e.fixed_origin?.strategy}.</p>
+			<p class="muted small">{e.rolling_origin?.strategy}.</p>
+			<p class="muted small">Observation: {e.fixed_origin?.observation_operator}.</p>
+			<p class="muted small">Test weeks start {shortDate(targets[0])}. {e.honest_note}</p>
 		</More>
-	{:else if !err}
-		<Card><div class="empty">Comparing with the real hospital data…</div></Card>
 	{/if}
 </div>
 
 <style>
-	.knobs {
-		display: grid;
-		grid-template-columns: 1fr 1fr auto;
-		gap: 24px;
-		align-items: end;
+	.verdict {
+		border: 1px solid rgb(236 131 90 / 0.45);
+		background: rgb(236 131 90 / 0.08);
+		border-radius: 12px;
+		padding: 12px 16px;
+		font-size: 13px;
+		line-height: 1.55;
+		color: var(--text-2);
+		max-width: 980px;
 	}
-	.vgrid {
+	.verdict b {
+		color: #ffb199;
+		margin-right: 4px;
+	}
+	.heads {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) 300px;
-		gap: 28px;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 14px;
 	}
 	.h {
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--text-3);
-		margin-bottom: 8px;
-	}
-	.check {
-		display: grid;
-		grid-template-columns: 18px 1fr auto;
-		gap: 8px;
-		align-items: center;
-		font-size: 12.5px;
-		padding: 5px 0;
-		border-bottom: 1px solid var(--line);
-	}
-	.mark {
-		color: var(--serious);
-		font-weight: 600;
-	}
-	.mark.ok {
-		color: var(--good);
-	}
-	.cn {
-		color: var(--text-2);
 		display: flex;
 		flex-direction: column;
+		gap: 3px;
 	}
-	.cn small {
-		color: var(--text-3);
-		font-size: 11px;
-	}
-	.check b {
-		font-family: var(--mono);
-		font-weight: 500;
+	.h span {
 		font-size: 12px;
+		color: var(--text-3);
+	}
+	.h b {
+		font-size: 24px;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+	}
+	.h small {
+		font-size: 11px;
+		color: var(--text-3);
+	}
+	.bad {
+		color: #ff8a8a !important;
+	}
+	.caveat {
+		margin: 0;
+		font-size: 12.5px;
+		color: var(--text-3);
+		border-left: 2px solid var(--warning);
+		padding-left: 10px;
+	}
+	.picker {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-bottom: 12px;
+	}
+	.picker button {
+		border: 1px solid var(--line-2);
+		background: transparent;
+		color: var(--text-3);
+		font: inherit;
+		font-size: 12px;
+		padding: 4px 10px;
+		border-radius: 999px;
+		cursor: pointer;
+	}
+	.picker button:hover {
+		color: var(--text-1);
+	}
+	.picker button.on {
+		background: var(--elev);
+		color: var(--text-1);
+		border-color: #4a4a52;
 	}
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 12px;
+		font-size: 12.5px;
+		font-variant-numeric: tabular-nums;
+	}
+	th,
+	td {
+		padding: 6px 8px;
+		border-bottom: 1px solid var(--line);
+		text-align: right;
+	}
+	th:first-child,
+	td:first-child {
+		text-align: left;
 	}
 	th {
-		text-align: right;
 		color: var(--text-3);
-		font-weight: 400;
-		padding: 3px 0 3px 12px;
-		font-size: 11.5px;
+		font-weight: 500;
 	}
-	.miss {
-		margin: 14px 0 0;
-		font-size: 12.5px;
-		line-height: 1.55;
+	td {
 		color: var(--text-2);
 	}
-	.miss b {
+	.kvs {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.kv {
+		display: flex;
+		justify-content: space-between;
+		gap: 16px;
+		font-size: 12.5px;
+		color: var(--text-3);
+	}
+	.kv b {
 		color: var(--text-1);
-		font-weight: 600;
+		font-weight: 500;
+		text-align: right;
+	}
+	.kv a {
+		color: inherit;
 	}
 	.small {
 		font-size: 11.5px;
-		margin: 10px 0 0;
+		line-height: 1.5;
+		margin: 8px 0 0;
 	}
-	td {
-		padding: 4px 0;
+	.plain {
+		font-size: 13px;
 		color: var(--text-2);
-		border-bottom: 1px solid var(--line);
-	}
-	td + td {
-		text-align: right;
-		padding-left: 12px;
-		font-family: var(--mono);
-		color: var(--text-1);
-	}
-	td.win {
-		color: var(--good);
-	}
-	.note {
-		font-size: 12.5px;
 		line-height: 1.55;
-		max-width: 820px;
 		margin: 0;
 	}
-	@media (max-width: 1000px) {
-		.vgrid,
-		.knobs {
-			grid-template-columns: 1fr;
+	code {
+		font-family: var(--mono);
+		font-size: 12px;
+		background: var(--bg);
+		padding: 1px 5px;
+		border-radius: 4px;
+	}
+	.empty {
+		text-align: left;
+		padding: 8px 0;
+		display: flex;
+		gap: 10px;
+		align-items: center;
+	}
+	.spin {
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		border: 2px solid var(--line-2);
+		border-top-color: var(--text-1);
+		animation: spin 0.7s linear infinite;
+		display: inline-block;
+	}
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
 		}
 	}
 </style>

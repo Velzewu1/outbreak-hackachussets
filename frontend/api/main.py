@@ -1,4 +1,7 @@
-"""Thin HTTP layer over the cascade package for the SvelteKit frontend.
+"""Thin HTTP layer over the models for the SvelteKit frontend.
+
+/api/rn/* serves the ResiliNet weekly pipeline (pipeline/, see resilinet.py);
+the other endpoints serve the daily cascade model in seir/.
 
     uvicorn main:app --app-dir frontend/api --reload --port 8000
 
@@ -25,6 +28,7 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -97,6 +101,7 @@ if "forkserver" in multiprocessing.get_all_start_methods():
 
 app = FastAPI(title="Outbreak cascade API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(GZipMiddleware, minimum_size=2048)
 
 
 # ---- requests ------------------------------------------------------------------
@@ -546,6 +551,12 @@ def validation(req: ValidationRequest):
         )
     except (ValidationError, KeyError, ValueError) as e:
         raise HTTPException(422, str(e)) from e
+
+
+# ---- the ResiliNet weekly pipeline (repo root pipeline/) --------------------------
+from resilinet import router as resilinet_router  # noqa: E402
+
+app.include_router(resilinet_router)
 
 
 # ---- the built site (single-page app) --------------------------------------------

@@ -15,7 +15,11 @@
 		plus: 'M8 3v10M3 8h10',
 		bolt: 'M9 1L3 9h4l-1 6 6-8H8z',
 		layers: 'M8 1.5l6.5 3.5L8 8.5 1.5 5zM1.5 8L8 11.5 14.5 8M1.5 11L8 14.5 14.5 11',
-		chevron: 'M6 3l5 5-5 5'
+		chevron: 'M6 3l5 5-5 5',
+		tracts: 'M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z',
+		lab: 'M6 1.5h4M6.5 1.5v4L2.6 12.9a1 1 0 00.9 1.6h9a1 1 0 00.9-1.6L9.5 5.5v-4M4.6 10h6.8',
+		download: 'M8 2v8M4.5 6.5L8 10l3.5-3.5M2.5 13.5h11',
+		data: 'M2.5 4c0-1.1 2.5-2 5.5-2s5.5.9 5.5 2-2.5 2-5.5 2-5.5-.9-5.5-2zM2.5 4v8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2'
 	};
 	interface Props {
 		name: keyof typeof PATHS | string;

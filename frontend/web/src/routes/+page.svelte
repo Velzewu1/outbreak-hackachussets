@@ -1,178 +1,155 @@
 <script lang="ts">
-	import { app } from '#lib/state.svelte.ts';
-	import { num, pct, shortDate, longDate } from '#lib/format.ts';
-	import { occupancyStatus, STATUS } from '#lib/colors.ts';
-	import MapView from '#lib/components/MapView.svelte';
+	import { rn, scoreColor, tractLabel, weekLabel } from '#lib/rn.svelte.ts';
+	import { num, fixed, pct } from '#lib/format.ts';
+	import RnMap from '#lib/components/RnMap.svelte';
 
-	const r = $derived(app.result!);
-	const t = $derived(Math.min(app.day, r.epi.dates.length - 1));
-	const city = $derived(r.epi.citywide);
-	const s = $derived(r.epi.summary);
-	const sys = $derived(r.system);
-	const pop = $derived(r.geo.patches.reduce((a, p) => a + p.population, 0));
+	const r = $derived(rn.result!);
+	const v = $derived(rn.view!);
+	const b = $derived(rn.baseView!);
+	const m = $derived(v.metrics);
+	const after = $derived(rn.phase === 'after');
+	const nTracts = $derived(r.districts.length);
+	const need = $derived(v.need.reduce((a, x) => a + (x ?? 0), 0));
 
-	const hospitals = $derived.by(() => {
-		if (!sys) return [];
-		return sys.hospitals
-			.map((id, j) => {
-				const ward = sys.occupancy_ward[t]?.[j] ?? 0;
-				const icu = sys.occupancy_icu[t]?.[j] ?? 0;
-				const div = !!sys.on_diversion[t]?.[j];
-				const occ = Math.max(ward, icu);
-				return { id, j, occ, div, status: occupancyStatus(occ, div) };
-			})
-			.sort((a, b) => b.occ - a.occ);
-	});
-	const full = $derived(hospitals.filter((h) => h.div).length);
-	const sick = $derived(city.infectious?.[t] ?? 0);
-	const inHospital = $derived(city.inpatients?.[t] ?? null);
-	const reff = $derived(r.epi.rates.r_eff?.[t] ?? null);
-	// Population-weighted share of usual hospital care still available today.
-	const access = $derived.by(() => {
-		if (!sys) return null;
-		const row = sys.access[t] ?? [];
-		return r.geo.patches.reduce((a, p, i) => a + (row[i] ?? 1) * p.population, 0) / pop;
-	});
-
-	// The neighborhood clicked on the map, with where its patients usually go.
-	const hood = $derived.by(() => {
-		const i = r.geo.patches.findIndex((p) => p.id === app.selectedPatch);
-		if (i < 0) return null;
-		const bp = r.epi.by_patch;
-		return {
-			p: r.geo.patches[i],
-			sick: bp.prevalence[t]?.[i] ?? 0,
-			infected: bp.attack_rate[t]?.[i] ?? 0,
-			inHospital: bp.inpatients?.[t]?.[i] ?? null,
-			access: sys?.access[t]?.[i] ?? null,
-			go: sys
-				? r.geo.hospitals
-						.map((h, j) => ({ id: h.id, share: sys.shares[i][j], min: sys.travel[i][j] }))
-						.filter((h) => h.share >= 0.05)
-						.sort((a, b) => b.share - a.share)
-				: []
-		};
-	});
-
-	const trend = $derived(
-		reff === null ? '' : reff > 1.05 ? 'growing' : reff < 0.95 ? 'shrinking' : 'holding steady'
+	const hospitals = $derived(
+		v.hospitals
+			.map((h) => ({ ...h, full: h.capacity > 0 ? h.load / h.capacity : Infinity }))
+			.sort((a, c) => c.full - a.full)
 	);
+
+	function delta(now: number, base: number, digits = 0) {
+		if (!rn.hasBaseline) return '';
+		const d = now - base;
+		if (Math.abs(d) < 0.5 * 10 ** -digits) return 'unchanged by events';
+		return `${d > 0 ? '+' : '−'}${fixed(Math.abs(d), digits)} vs no events`;
+	}
+
+	const tract = $derived.by(() => {
+		const i = rn.districtIndex(rn.selectedDistrict);
+		if (i < 0) return null;
+		return { d: r.districts[i], score: v.access[i], need: v.need[i], unmet: v.unmet[i], base: b.access[i] };
+	});
+	const hosp = $derived.by(() => {
+		if (!rn.selectedHospital) return null;
+		const w = v.hospitals.find((h) => h.id === rn.selectedHospital);
+		const h = r.hospitals.find((x) => x.id === rn.selectedHospital);
+		return w && h ? { h, w } : null;
+	});
 </script>
 
 <div class="mappage">
 	<div class="mapcol">
-		{#if r.geo.mappable}
-			<MapView />
+		{#if rn.geo[r.dataset]}
+			<RnMap />
 		{:else}
-			<div class="nomap">
-				<div>
-					<h2>No map for this scenario</h2>
-					<p>
-						“{app.detail?.title}” treats {r.geo.patches.map((p) => p.id).join(', ')} as one population, so there is
-						nothing to colour on a Boston map. Switch to the Boston scenario for the map, or see the
-						<a href="/epidemic">Spread</a> page for this one's curves.
-					</p>
-					<button class="btn" onclick={() => app.load('boston_city')}>Open Boston · 15 neighborhoods</button>
-				</div>
-			</div>
+			<div class="nomap"><span class="spin"></span> Loading tract outlines…</div>
 		{/if}
 	</div>
 
 	<aside class="side">
 		<div class="when">
-			<div class="d">{longDate(app.date)}</div>
-			<div class="muted">Day {t + 1} of {r.epi.dates.length}</div>
+			<div class="d">{weekLabel(rn.week)}</div>
+			<div class="muted">of {r.weeks} · {after ? 'after sending patients elsewhere' : 'before any rerouting'}</div>
 		</div>
 
-		{#if hood}
-			<div class="hood">
-				<div class="hh">
-					<b>{hood.p.id}</b>
-					<button class="x" onclick={() => (app.selectedPatch = null)} aria-label="Back to the whole city">×</button>
-				</div>
-				<div class="muted small">{num(hood.p.population)} residents</div>
-				<div class="kv"><span>Sick now</span><b>{pct(hood.sick, 1)}</b></div>
-				<div class="kv"><span>Infected so far</span><b>{pct(hood.infected, 0)}</b></div>
-				{#if hood.inHospital !== null}<div class="kv"><span>In hospital</span><b>{num(hood.inHospital)}</b></div>{/if}
-				{#if hood.access !== null}<div class="kv"><span>Hospital care available</span><b>{pct(hood.access, 0)}</b></div>{/if}
-				{#if hood.go.length}
-					<div class="muted small go">Patients usually go to (lines on the map)</div>
-					{#each hood.go as h (h.id)}
-						<div class="kv"><span>{h.id} · {Math.round(h.min)} min away</span><b>{pct(h.share)}</b></div>
-					{/each}
-				{/if}
-			</div>
-		{/if}
-
 		<p class="story">
-			About <b>{num(sick)}</b> people ({pct(sick / pop, 1)} of the city) are sick and can pass it on{#if inHospital !== null}, and <b>{num(inHospital)}</b> are in hospital{/if}.
-			{#if trend}The outbreak is <b>{trend}</b>: each case infects about {reff!.toFixed(1)} others.{/if}
-			{#if sys}
-				{#if full}<b class="bad">{full} of {hospitals.length} hospitals are full</b> and sending patients elsewhere.{:else}All {hospitals.length} hospitals are taking patients.{/if}
+			This week <b>{num(need)}</b> people need a hospital bed.
+			{#if m.overloaded_hospitals}
+				<b class="bad">{m.overloaded_hospitals} of {r.hospitals.length} hospitals</b> have more patients than beds{#if after && m.rerouted_people > 0.5}, so <b>{num(m.rerouted_people)}</b> are sent to a hospital with room{/if}.
+			{:else}
+				Every hospital has room.
+			{/if}
+			{#if m.unmet_need_people >= 0.5}<b class="bad">{num(m.unmet_need_people)}</b> can't get a bed nearby.{/if}
+			{#if m.districts_below_threshold}
+				{m.districts_below_threshold} of {nTracts} tracts have poor access (a score under {r.threshold}).
 			{/if}
 		</p>
 
 		<div class="big">
-			<div class="b">
-				<span>Sick now</span>
-				<b>{num(sick)}</b>
+			<div class="b" title="Hospitals asked for more beds than they have this week">
+				<span>Hospitals over capacity</span>
+				<b class:bad={m.overloaded_hospitals > 0}>{m.overloaded_hospitals} of {r.hospitals.length}</b>
+				<small>{delta(m.overloaded_hospitals, b.metrics.overloaded_hospitals)}</small>
 			</div>
-			{#if inHospital !== null}
-				<div class="b">
-					<span>In hospital</span>
-					<b>{num(inHospital)}</b>
-				</div>
-			{/if}
-			{#if sys}
-				<div class="b">
-					<span>Hospitals full</span>
-					<b class:bad={full > 0}>{full} of {hospitals.length}</b>
-				</div>
-				<div class="b">
-					<span>Hospital care available</span>
-					<b>{pct(access, 0)}</b>
-				</div>
-			{/if}
+			<div class="b" title="New patients this week with no bed at any hospital they could reach. People per week, not beds.">
+				<span>Can't get a bed</span>
+				<b class:bad={m.unmet_need_people >= 0.5}>{num(m.unmet_need_people)}</b>
+				<small>{delta(m.unmet_need_people, b.metrics.unmet_need_people) || 'people this week'}</small>
+			</div>
+			<div class="b" title="New patients moved to a hospital with spare beds. Only happens after rerouting.">
+				<span>Sent elsewhere</span>
+				<b>{after ? num(m.rerouted_people) : '0'}</b>
+				<small>{after ? 'people this week' : 'none before rerouting'}</small>
+			</div>
+			<div class="b" title="Tracts whose access score is under {r.threshold}. A display threshold, not a clinical standard.">
+				<span>Tracts with poor access</span>
+				<b class:bad={m.districts_below_threshold > 0}>{m.districts_below_threshold} of {nTracts}</b>
+				<small>{delta(m.districts_below_threshold, b.metrics.districts_below_threshold) || `score under ${r.threshold}`}</small>
+			</div>
 		</div>
 
-		{#if sys}
-			<div class="block">
-				<div class="bh">How full each hospital is today</div>
-				{#each hospitals as h (h.id)}
-					<button
-						class="hrow"
-						class:sel={app.selectedHospital === h.id}
-						title={r.geo.hospitals[h.j]?.name}
-						onclick={() => (app.selectedHospital = app.selectedHospital === h.id ? null : h.id)}
-					>
-						<span class="hid">{h.id}</span>
-						<span class="hbar"><span style:width="{Math.min(100, h.occ * 100)}%" style:background={STATUS[h.status]}></span></span>
-						<span class="hv">{h.div ? 'full' : pct(h.occ)}</span>
-					</button>
+		{#if r.fallback_districts.length}
+			<p class="note">
+				{r.fallback_districts.length === 1 ? 'One tract has' : `${r.fallback_districts.length} tracts have`} no hospital within {rn.meta?.radius_km ?? 10} km, so it uses its nearest one:
+				{r.fallback_districts.map((id) => tractLabel(r.districts.find((d) => d.id === id))).join(', ')}.
+			</p>
+		{/if}
+
+		{#if tract}
+			<div class="card">
+				<div class="hh">
+					<b>{tractLabel(tract.d)}</b>
+					<button class="x" onclick={() => (rn.selectedDistrict = null)} aria-label="Close">×</button>
+				</div>
+				<div class="kv"><span>Access score</span><b><i class="sw" style:background={scoreColor(tract.score)}></i>{fixed(tract.score, 1)}</b></div>
+				{#if rn.hasBaseline}<div class="kv"><span>With no events</span><b>{fixed(tract.base, 1)}</b></div>{/if}
+				<div class="kv"><span>Need a bed</span><b>{fixed(tract.need, 1)} people/week</b></div>
+				<div class="kv"><span>Can't get one</span><b>{fixed(tract.unmet, 1)} people/week</b></div>
+				<div class="kv"><span>Residents</span><b>{num(tract.d.population)}</b></div>
+				<div class="muted small go">Where its patients go (lines on the map)</div>
+				{#each tract.d.catchment as c (c.id)}
+					<div class="kv"><span>{rn.hospitalName(c.id)} · {fixed(c.km, 1)} km</span><b>{pct(c.share)}</b></div>
 				{/each}
+				<a class="link" href="/tracts">Everything about this tract →</a>
+			</div>
+		{:else if hosp}
+			<div class="card">
+				<div class="hh">
+					<b>{hosp.h.name}</b>
+					<button class="x" onclick={() => (rn.selectedHospital = null)} aria-label="Close">×</button>
+				</div>
+				{#if hosp.w.closed}<div class="kv"><span class="bad">Closed this week</span></div>{/if}
+				<div class="kv"><span>Patients wanting a bed</span><b>{num(hosp.w.load)}</b></div>
+				<div class="kv"><span>Beds available</span><b>{num(hosp.w.capacity)} of {num(hosp.h.beds)}</b></div>
+				{#if hosp.w.excess > 0}<div class="kv"><span>Over capacity by</span><b class="bad">{num(hosp.w.excess)}</b></div>{/if}
+				<div class="kv"><span>Score (own / with neighbours)</span><b>{fixed(hosp.w.own, 0)} / {fixed(hosp.w.score, 0)}</b></div>
+				<a class="link" href="/hospitals">Week by week →</a>
 			</div>
 		{/if}
 
 		<div class="block">
-			<div class="bh">Over the whole wave</div>
-			<div class="kv"><span>Ever infected</span><b>{pct(s.attack_rate, 0)} of residents</b></div>
-			{#if s.peak_inpatients}
-				<div class="kv"><span>Most in hospital at once</span><b>{num(s.peak_inpatients)} on {shortDate(s.peak_inpatients_date)}</b></div>
-			{/if}
-			{#if s.deaths !== undefined}<div class="kv"><span>Deaths</span><b>{num(s.deaths)}</b></div>{/if}
-			{#if sys}
-				<div class="kv"><span>Patients sent to another hospital</span><b>{num(sys.summary.diverted_patients)}</b></div>
-			{/if}
+			<div class="bh">How full each hospital is</div>
+			{#each hospitals as h (h.id)}
+				<button class="hrow" class:sel={rn.selectedHospital === h.id} title={r.hospitals.find((x) => x.id === h.id)?.name} onclick={() => (rn.selectedHospital = rn.selectedHospital === h.id ? null : h.id)}>
+					<span class="hid">{rn.hospitalName(h.id)}</span>
+					<span class="hbar"><span class:over={h.full > 1} style:width="{Math.min(100, (h.closed ? 1 : h.full) * 100)}%"></span></span>
+					<span class="hv" class:bad={h.closed || h.full > 1}>{h.closed ? 'closed' : pct(h.full)}</span>
+				</button>
+			{/each}
+			<p class="muted small">Patients wanting a bed as a share of beds. Capacity is licensed beds{r.synthetic ? '' : ', a stand-in for staffed beds'}.</p>
 		</div>
 
-		<p class="foot muted">An illustrative what-if for Boston, not a forecast. Change the assumptions with <b>What if…?</b> above.</p>
+		<p class="foot muted">
+			{r.synthetic ? 'Synthetic data, for illustration only.' : 'Real Suffolk County tracts and hospitals with a simulated epidemic.'}
+			Change the assumptions or close a hospital with <b>What if…?</b> above.
+		</p>
 	</aside>
 </div>
 
 <style>
 	.mappage {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) 320px;
+		grid-template-columns: minmax(0, 1fr) 340px;
 		height: 100%;
 		min-height: 560px;
 	}
@@ -184,21 +161,8 @@
 		height: 100%;
 		display: grid;
 		place-items: center;
-		padding: 30px;
-		background: #0e0e10;
-	}
-	.nomap > div {
-		max-width: 440px;
-	}
-	.nomap h2 {
-		font-size: 17px;
-		margin: 0 0 8px;
-	}
-	.nomap p {
 		color: var(--text-3);
-		font-size: 13px;
-		line-height: 1.55;
-		margin: 0 0 14px;
+		background: #0e0e10;
 	}
 	.side {
 		border-left: 1px solid var(--line);
@@ -206,7 +170,7 @@
 		padding: 20px;
 		display: flex;
 		flex-direction: column;
-		gap: 18px;
+		gap: 16px;
 	}
 	.when .d {
 		font-size: 19px;
@@ -230,7 +194,46 @@
 	.bad {
 		color: #ff8a8a !important;
 	}
-	.hood {
+	.big {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 10px;
+	}
+	.b {
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		padding: 10px 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		min-width: 0;
+	}
+	.b span {
+		font-size: 11.5px;
+		color: var(--text-3);
+	}
+	.b b {
+		font-size: 19px;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+	}
+	.b small {
+		font-size: 11px;
+		color: var(--text-3);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.note {
+		margin: 0;
+		font-size: 12px;
+		line-height: 1.5;
+		color: var(--text-3);
+		border-left: 2px solid var(--warning);
+		padding-left: 10px;
+	}
+	.card {
 		background: var(--panel);
 		border: 1px solid var(--line-2);
 		border-radius: 12px;
@@ -242,8 +245,9 @@
 	.hh {
 		display: flex;
 		justify-content: space-between;
-		align-items: center;
-		font-size: 15px;
+		align-items: flex-start;
+		gap: 8px;
+		font-size: 14px;
 	}
 	.x {
 		all: unset;
@@ -258,32 +262,27 @@
 	}
 	.small {
 		font-size: 11.5px;
+		margin: 0;
 	}
 	.go {
 		margin-top: 6px;
 	}
-	.big {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 10px;
+	.sw {
+		display: inline-block;
+		width: 9px;
+		height: 9px;
+		border-radius: 2px;
+		margin-right: 6px;
+		box-shadow: 0 0 0 1px var(--line-2);
 	}
-	.b {
-		background: var(--panel);
-		border: 1px solid var(--line);
-		border-radius: 10px;
-		padding: 10px 12px;
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
+	.link {
+		font-size: 12px;
+		color: var(--text-2);
+		margin-top: 4px;
+		text-decoration: none;
 	}
-	.b span {
-		font-size: 11.5px;
-		color: var(--text-3);
-	}
-	.b b {
-		font-size: 19px;
-		font-weight: 600;
-		letter-spacing: -0.01em;
+	.link:hover {
+		color: var(--text-1);
 	}
 	.bh {
 		font-size: 12px;
@@ -296,7 +295,7 @@
 		padding-top: 16px;
 		display: flex;
 		flex-direction: column;
-		gap: 7px;
+		gap: 6px;
 	}
 	.kv {
 		display: flex;
@@ -309,11 +308,12 @@
 		color: var(--text-1);
 		font-weight: 500;
 		text-align: right;
+		white-space: nowrap;
 	}
 	.hrow {
 		all: unset;
 		display: grid;
-		grid-template-columns: 70px 1fr 40px;
+		grid-template-columns: 92px 1fr 46px;
 		gap: 10px;
 		align-items: center;
 		padding: 3px 6px;
@@ -328,6 +328,9 @@
 	}
 	.hid {
 		color: var(--text-2);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.hbar {
 		height: 6px;
@@ -339,6 +342,10 @@
 		display: block;
 		height: 100%;
 		border-radius: 3px;
+		background: #6d6d78;
+	}
+	.hbar span.over {
+		background: var(--critical);
 	}
 	.hv {
 		text-align: right;
@@ -349,6 +356,20 @@
 		font-size: 11.5px;
 		line-height: 1.5;
 		margin: auto 0 0;
+	}
+	.spin {
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		border: 2px solid var(--line-2);
+		border-top-color: var(--text-1);
+		animation: spin 0.7s linear infinite;
+		display: inline-block;
+	}
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 	@media (max-width: 900px) {
 		.mappage {

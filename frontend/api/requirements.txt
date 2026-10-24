@@ -1,3 +1,3 @@
-# The API runs the model in seir/ (install seir/requirements.txt too).
+# The API runs pipeline/ and seir/: install requirements.txt and seir/requirements.txt too.
 fastapi>=0.110
 uvicorn>=0.29

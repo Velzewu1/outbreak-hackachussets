@@ -44,10 +44,14 @@ and are cached by content, so runs are reproducible.
 ### Website (SvelteKit)
 
 The same `pipeline.api` also drives the website in `frontend/`: a FastAPI app
-(`frontend/api`) serves the engine as JSON and a SvelteKit site (`frontend/web`)
-draws it. The ResiliNet pages (map, hospitals, tracts, scenario lab, validation
-& data, how it works) are the default; an earlier, more detailed daily model
-(`seir/`) is kept under "Daily model". See [frontend/README.md](frontend/README.md).
+(`frontend/api`, routes in `resilinet.py`) serves the engine as JSON and a
+SvelteKit site (`frontend/web`) draws it. It covers everything the Streamlit app
+does (dataset, the five model sliders, hospital closures and bed cuts, week and
+before/after rerouting, KPIs against the no-events baseline, map, hospitals,
+tracts, reroute ledger, validation, data manifest and the four exports) plus a
+scenario lab with the hardest-hit tracts. The weekly ResiliNet pages are the
+default; an earlier, more detailed daily model (`seir/`) is kept under "Daily".
+See [frontend/README.md](frontend/README.md).
 
 ```bash
 pip install -r requirements.txt -r seir/requirements.txt -r frontend/api/requirements.txt
