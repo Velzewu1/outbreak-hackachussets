@@ -1,0 +1,29 @@
+# Illustrative system scenario: 3 neighborhoods, 4 hospitals.
+# Beds are the share of each hospital's MassGIS capacity assumed to serve
+# these three neighborhoods (about a quarter). Drive times are rough guesses.
+# Replace both from data/processed before drawing conclusions.
+epi: boston_epi.yaml
+network:
+  hospitals:
+    - {id: MGH,   ccn: "220071", ward_beds: 220, icu_beds: 30, baseline_occupancy: 0.70}
+    - {id: BMC,   ccn: "220031", ward_beds: 70,  icu_beds: 10, baseline_occupancy: 0.70}
+    - {id: BIDMC, ccn: "220086", ward_beds: 160, icu_beds: 28, baseline_occupancy: 0.70}
+    - {id: TUFTS, ccn: "220116", ward_beds: 70,  icu_beds: 14, baseline_occupancy: 0.70}
+  travel_minutes:          # rows: Dorchester, Roxbury, Back Bay
+    - [20, 12, 18, 15]
+    - [15,  8, 10, 10]
+    - [10, 10,  8,  7]
+allocation:
+  decay: 0.08
+fdna:
+  per_hospital:
+    - {src: staff, sod: 0.8, cod: 30}
+    - {src: icu,   sod: 0.6, cod: 40}
+    - {src: ward,  sod: 0.5, cod: 60}
+  shared:
+    - {node: ems, kind: ems, sod: 0.3, cod: 70}
+    - {node: oxygen_supplier, kind: fixed, value: 100, sod: 0.5, cod: 20}
+rerouting: {p_on: 40, p_off: 50, occ_on: 0.95, occ_off: 0.90, min_open: 1}
+equity:
+  vulnerability: {Dorchester: 1.3, Roxbury: 1.5, "Back Bay": 0.8}
+events: []

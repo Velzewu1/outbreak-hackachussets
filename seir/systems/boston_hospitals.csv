@@ -1,0 +1,8 @@
+id,ccn,name,lat,lon,icu_beds,ward_beds,er
+MGH,220071,Massachusetts General Hospital,42.3626,-71.0686,101,789,true
+BWH,220110,Brigham and Women's Hospital,42.3359,-71.1069,89,668,true
+BIDMC,220086,Beth Israel Deaconess Medical Center,42.3388,-71.1060,95,574,true
+BMC,220031,Boston Medical Center,42.3351,-71.0729,65,325,true
+TUFTS,220116,Tufts Medical Center,42.3496,-71.0636,50,232,true
+STE,220036,St. Elizabeth's (BMC Brighton),42.3497,-71.1478,38,156,true
+FAULKNER,220119,Brigham and Women's Faulkner Hospital,42.3017,-71.1283,14,185,true

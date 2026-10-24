@@ -94,7 +94,10 @@ cascade/core.py          shared SimState, Module, Simulation (from the cascade r
 cascade/epi/             structure, rates, mixing, engine, results, config, presets,
                          adapter (FDNA plug), calibrate, validation, ensemble,
                          sensitivity, data loaders, terminal output, CLI
-scenarios/  examples/  data/  docs/  tests/  bench.py
+cascade/{network,allocation,fdna,reroute,equity,recorder,contracts,scenario,api}.py
+                         system layer from the cascade reference, unchanged
+                         (python -m cascade run systems/boston_city.yaml)
+scenarios/  systems/  examples/  data/  docs/  tests/  bench.py
 ```
 
 ## Compatibility
