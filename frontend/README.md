@@ -29,7 +29,10 @@ npm --prefix frontend/web run build
 uvicorn main:app --app-dir frontend/api --port 8000      # open http://localhost:8000
 ```
 
-The map basemap (CARTO dark tiles) needs internet. Offline, the map still draws
+The map basemap (CARTO dark tiles) needs internet and, to drop CARTO's "API key
+required" watermark, a free key from https://carto.com/basemaps/apikey/ in
+`frontend/web/.env` (see `.env.example`; git ignores `.env`). The key is read at
+build time, so rebuild after setting it. Offline, the map still draws
 neighborhoods, hospitals and flows on a plain dark background.
 
 ## Pages

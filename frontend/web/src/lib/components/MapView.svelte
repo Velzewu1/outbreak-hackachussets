@@ -10,6 +10,12 @@
 
 	setWorkerUrl(workerUrl);
 
+	// CARTO watermarks tiles requested without a key; set VITE_CARTO_KEY in frontend/web/.env.
+	const cartoKey: string | undefined = import.meta.env.VITE_CARTO_KEY;
+	const basemapTiles = cartoKey
+		? [`https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png?key=${encodeURIComponent(cartoKey)}`]
+		: ['a', 'b', 'c', 'd'].map((s) => `https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png`);
+
 	let el: HTMLDivElement;
 	let map: MLMap | null = null;
 	let ready = $state(false);
@@ -168,9 +174,7 @@
 				sources: {
 					carto: {
 						type: 'raster',
-						tiles: ['a', 'b', 'c', 'd'].map(
-							(s) => `https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png`
-						),
+						tiles: basemapTiles,
 						tileSize: 256,
 						attribution: '© OpenStreetMap contributors © CARTO'
 					}
