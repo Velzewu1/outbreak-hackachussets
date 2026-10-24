@@ -1,0 +1,3 @@
+# The API runs the model in seir/ (install seir/requirements.txt too).
+fastapi>=0.110
+uvicorn>=0.29
