@@ -1,8 +1,8 @@
-# OutbreakTwin
+# ResiliNet
 
 **Simulating how epidemics affect hospitals — and what happens when the healthcare network is pushed beyond its limits.**
 
-Different neighborhoods get different amounts of illness. Some of the sick people in each neighborhood need a hospital bed, and every hospital has only so many beds. When one hospital fills up, new patients have to go somewhere else, and that can push the next hospital closer to its limit. OutbreakTwin is a simulation that shows how this chain reaction could play out across Boston-area hospitals and the neighborhoods they serve.
+Different neighborhoods get different amounts of illness. Some of the sick people in each neighborhood need a hospital bed, and every hospital has only so many beds. When one hospital fills up, new patients have to go somewhere else, and that can push the next hospital closer to its limit. ResiliNet is a simulation that shows how this chain reaction could play out across Boston-area hospitals and the neighborhoods they serve.
 
 - Live Demo: (LIVE_DEMO_URL)
 - Demo Video: (DEMO_VIDEO_URL)
@@ -11,13 +11,9 @@ Different neighborhoods get different amounts of illness. Some of the sick peopl
 > **This project is a research simulation, not a medical decision-making system.**
 > It does not give emergency, triage, dispatch, or hospital-planning advice.
 
-> Naming note: the code, the app title, and older documents call this project
-> "ResiliNet | Boston Hospital Cascade". OutbreakTwin is the same project.
-> (TODO: Decide on one name and update the app title if needed.)
-
 ## Contents
 
-[The problem](#the-problem) · [Our solution](#our-solution) · [How it works](#how-it-works) · [Screenshots](#screenshots-and-visual-walkthrough) · [Features](#features) · [Try OutbreakTwin](#try-outbreaktwin) · [Architecture](#project-architecture) · [Tech stack](#technology-stack) · [Built with Kiro](#built-with-kiro) · [Data and limits](#data-assumptions-and-limitations) · [Testing](#testing-and-evaluation) · [Team](#team-and-acknowledgments) · [Submission](#demo-and-submission)
+[The problem](#the-problem) · [Our solution](#our-solution) · [How it works](#how-it-works) · [Screenshots](#screenshots-and-visual-walkthrough) · [Features](#features) · [Try ResiliNet](#try-resilinet) · [Architecture](#project-architecture) · [Tech stack](#technology-stack) · [Built with Kiro](#built-with-kiro) · [Data and limits](#data-assumptions-and-limitations) · [Testing](#testing-and-evaluation) · [Team](#team-and-acknowledgments) · [Submission](#demo-and-submission)
 
 ## The problem
 
@@ -30,13 +26,13 @@ The answer depends on things that go beyond one building:
 - Which neighborhoods normally rely on the overloaded hospital?
 - Are the nearby hospitals already under strain themselves?
 
-An overloaded hospital is not only a problem for the street it sits on. Its extra patients land on other hospitals, and the neighborhoods that depended on it may lose easy access to care. OutbreakTwin makes that chain of effects visible so people can ask "what if?" questions and compare the answers.
+An overloaded hospital is not only a problem for the street it sits on. Its extra patients land on other hospitals, and the neighborhoods that depended on it may lose easy access to care. ResiliNet makes that chain of effects visible so people can ask "what if?" questions and compare the answers.
 
-OutbreakTwin does not tell anyone where real patients should go.
+ResiliNet does not tell anyone where real patients should go.
 
 ## Our solution
 
-OutbreakTwin works in four steps, one simulated week at a time:
+ResiliNet works in four steps, one simulated week at a time:
 
 1. **Simulate how an outbreak spreads** through each neighborhood (here, each census tract in Suffolk County, Massachusetts).
 2. **Estimate how many people need hospital care** each week.
@@ -108,7 +104,7 @@ Only new admission requests are redirected. Patients who are already in a bed st
 
 FDNA stands for **Functional Dependency Network Analysis**. The idea is that connected systems depend on each other, so a problem in one place can spread to the places that rely on it. Think of a power outage: when one substation fails, the neighborhoods it feeds lose power too.
 
-In OutbreakTwin, each hospital gets a 0–100 "operability" score based on how loaded it is. Hospitals that are close to each other pass some of their stress along. Each neighborhood's access score then blends the scores of the hospitals it depends on.
+In ResiliNet, each hospital gets a 0–100 "operability" score based on how loaded it is. Hospitals that are close to each other pass some of their stress along. Each neighborhood's access score then blends the scores of the hospitals it depends on.
 
 We call our version **FDNA-based**, not classical FDNA. We made specific adaptations (for example, a fixed-point solver for hospitals that depend on each other, and share-weighted neighborhood scores), and we have not yet checked our equations against the original FDNA publication. The weights are assumptions, not measurements. Details: [docs/mathematical-model.md](docs/mathematical-model.md).
 
@@ -157,7 +153,7 @@ Each item below is covered by the automated tests or by the offline demo scripts
 
 The repository also contains a SvelteKit website and an earlier daily model. See [Project architecture](#project-architecture).
 
-## Try OutbreakTwin
+## Try ResiliNet
 
 ### Requirements
 
@@ -293,7 +289,7 @@ All versions are pinned in [requirements.txt](requirements.txt).
 
 ## Built with Kiro
 
-OutbreakTwin was planned and organized around Kiro. The repository's own rule, in [AGENTS.md](AGENTS.md), is that all project code is authored through Kiro, and the data manifest records the public-data snapshots as copied in through Kiro.
+ResiliNet was planned and organized around Kiro. The repository's own rule, in [AGENTS.md](AGENTS.md), is that all project code is authored through Kiro, and the data manifest records the public-data snapshots as copied in through Kiro.
 
 What the repository shows:
 
