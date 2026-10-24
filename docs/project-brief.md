@@ -1,5 +1,19 @@
 # Project brief
 
+> **Reconciliation notice (authoritative).** This brief is a high-level summary.
+> The **authoritative** specification is the reconciled set produced from
+> `Addiotional Info 1.txt`: `architecture.md`, `docs/mathematical-model.md`,
+> `docs/weekly-state-machine.md`, `contracts/`, `docs/integration-plan.md`,
+> `docs/architecture-decisions.md`, and `docs/end-to-end-walkthrough.md`. Where
+> this brief's older wording conflicts with those documents, **those documents
+> win**. In particular, the obsolete bits below are superseded:
+> allocation/rerouting act on **new admissions only** (not a standing `H`
+> census); SEIR conserves `S+E+I+R=N` with `H_need` an auxiliary need signal (not
+> an `H` compartment / not occupied beds); the ledger is
+> `accepted + unmet = need` per origin district with persistent retained cohorts,
+> not `served + rerouted + unmet = demand`. The canonical typed contracts live in
+> `contracts/`, not in the table below.
+
 ## Goal
 
 Model how a weekly epidemic wave affects Boston-area hospital capacity and neighborhood access to care, then test whether rerouting or scenario changes reduce harm.
@@ -24,18 +38,19 @@ DATA -> SEPARATE -> IL1 -> SEIR+H -> IL2 -> FDNA -> ANALYSIS -> IL3 -> RESULTS
 
 ## Core data contracts
 
-| Type | Required fields |
-|---|---|
-| District | id, geometry, centroid, population, risk_weight, ej_flag, total_accessibility |
-| Hospital | id, name, lat, lon, staffed_beds, icu_beds, baseline_occupancy |
-| DiseaseConfig | R0, latent_days, infectious_days, hospitalization_fraction, length_of_stay_days, seed |
-| NetworkConfig | distance_decay_km, k_nearest, district_radius_km, hospital_radius_km, district_strength, hospital_strength, hospital_criticality, distance_shape |
-| SEIRState | per district: S, E, I, R, H |
-| Flow | district_id, hospital_id, share, patients |
-| Edge | feeder, receiver, kind, strength, criticality |
-| Injection | kind, targets, value, start_week, end_week, note |
-| WeekResult | week, hospital rows, district rows, reroutes, unmet demand, injections, checks |
-| RunResult | configuration, weekly results, validation metrics |
+The canonical typed contracts (with units, invariants, serialization, and owners)
+are defined once in **`contracts/`** — see `contracts/entities.md` and
+`contracts/pipeline-types.md`. Do not duplicate or redefine them here. The headline
+types are `District`, `Hospital`, `DiseaseConfig`, `NetworkConfig`, `Injection`,
+`SEIRState` (`S,E,I,R`; `H` is **not** a compartment), `SEIRWeekOutput`
+(`H_need`), `Accessibility`, `RequestRow`, `HospitalLoad`, `HospitalState`,
+`FDNAGraph`, `FDNAResult`, `RerouteRecord`/`RerouteResult`, `WeekResult`,
+`RunResult`, `ValidationReport`, `WeekView`.
+
+> The earlier `Flow { district_id, hospital_id, share, patients }` (standing
+> census) and `SEIRState` with an `H` field are **withdrawn** — superseded by
+> `RequestRow` (new-admission requests) and the need-state `SEIRState` in
+> `contracts/`.
 
 ## Default assumptions
 
@@ -44,8 +59,10 @@ DATA -> SEPARATE -> IL1 -> SEIR+H -> IL2 -> FDNA -> ANALYSIS -> IL3 -> RESULTS
 - Keep up to five hospitals within 10 km.
 - District hospital-dependence strength: 0.9.
 - Hospital links: within 5 km, symmetric strength 0.1, criticality 100.
-- Independent district SEIR+H is the MVP; mobility coupling is later work.
-- Patient rerouting is partial, fills only available capacity, and repeats until stable.
+- Independent district SEIR is the MVP (Option A); mobility coupling is later work.
+- Rerouting is partial and fills only available `free_new` capacity, acting on
+  **new-admission requests only** (existing inpatients are persistent retained
+  cohorts, never re-allocated). See `docs/mathematical-model.md` §5.
 
 Every default above must remain configurable and visibly labeled as an assumption.
 

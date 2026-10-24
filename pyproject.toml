@@ -1,0 +1,26 @@
+[project]
+name = "resilinet-boston-hospital-cascade"
+version = "0.1.0"
+description = "Boston epidemic -> hospital dependency -> rerouting -> access simulator (DS+X)"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# seir/ is the separate daily model with its own conventions; frontend/web is JavaScript.
+extend-exclude = ["docs", ".venv", "data", "seir", "frontend/web"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+# E741 (ambiguous name l/I) is intentional: SEIR compartment I is standard
+# epidemiological notation; keep it readable rather than renaming.
+ignore = ["E741"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+"pipeline/contracts.py" = ["E731"]  # a small lambda clamp is clearer inline
+"pipeline/seir.py" = ["E731"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

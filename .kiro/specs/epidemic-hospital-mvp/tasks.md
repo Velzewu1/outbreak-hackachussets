@@ -1,5 +1,13 @@
 # Tasks: epidemic hospital dependency MVP
 
+> **Reconciliation notice (authoritative).** These tasks are **not active**: the
+> implementation approval gate is **CLOSED** (see `AGENTS.md`). No production
+> modules or tests are built until the reconciled architecture
+> (`architecture.md` + `docs/` + `contracts/`) is approved. When approved, the
+> authorized delegation briefs are in `docs/agent-prompts/`, not this list. The
+> "SEIR+H / S,E,I,R,H" and standing-census wording below is superseded by the
+> need-state + new-admission-request model.
+
 - [ ] 1. Bootstrap the Python project
   - Create pinned `requirements.txt`, `config.yaml`, package markers, and minimal Streamlit entry point.
   - Configure pytest and Ruff; document setup and commands.

@@ -1,0 +1,72 @@
+# KIRO — Final Architecture Reconciliation Pass
+
+Read the complete `DSX_Kiro_Master_Implementation_Blueprint.md`, the original `DSX-project-plan.md`, and the existing architecture documentation.
+
+Your task is to reconcile their contradictions and produce the final authoritative specification for five parallel development workstreams.
+
+**Do not implement production code yet.**
+
+The new blueprint is the preferred technical starting point, but mathematical consistency and explicit human-approved decisions take precedence over reproducing it verbatim.
+
+## Mandatory corrections
+
+1. **Patient accounting:** Separate incident infections, new hospital admissions, existing hospital occupancy, scheduled discharges, and unmet demand. Rerouting must operate on new admissions only for MVP. Do not repeatedly allocate existing inpatients.
+
+2. **Weekly state transitions:** Specify exactly when interventions activate, discharges occur, demand is generated, provisional assignments are evaluated, final admissions are committed, and FDNA scores are recorded. Use a persistent `HospitalState` and immutable weekly snapshots.
+
+3. **Two-pass FDNA evaluation:** Allow a pre-rerouting evaluation and a post-rerouting evaluation, but do not commit provisional patient assignments or introduce unbounded FDNA/capacity feedback loops.
+
+4. **Graph semantics:** Maintain separate accessibility, patient-flow, and FDNA dependency edges. Geographic proximity does not prove functional dependence. Symmetric hospital dependencies must be configurable assumptions, not asserted facts.
+
+5. **Rerouting:** Define global competition between districts for available beds. Preserve originating district IDs, maintain capacity constraints, and ensure `new_admissions = accepted + unmet`. Redirected admissions are a subset of accepted admissions.
+
+6. **SEIR conservation:** Explicitly define whether `H` belongs to the mutually exclusive epidemic compartments or is an auxiliary metric, and adapt the population conservation equation accordingly.
+
+7. **Scenario isolation:** Scenarios must start from identical initial states and random seeds. No cross-scenario mutations. Closing a hospital does not automatically erase existing inpatients.
+
+8. **Synthetic data:** Synthetic recovery experiments must not be described as external validation. Historical real-world backtests are optional and only reported after actual computation.
+
+9. **Scope:** Keep the weekly Python/Streamlit nine-block pipeline. Do not introduce the alternative daily ICU/mortality-feedback architecture, React/FastAPI, Jev, or LLM layers in the MVP.
+
+10. **Canonical interfaces:** Every cross-module object must have one definition, explicit units, invariants, serialization conventions, and an owning workstream.
+
+## Required outputs
+
+Update or create:
+
+- `architecture.md` — exact execution pipeline and module responsibilities.
+- `AGENTS.md` — global Kiro agent rules and prohibited cross-module edits.
+- `docs/mathematical-model.md` — equations, variable meanings and conservation laws.
+- `docs/weekly-state-machine.md` — complete week-by-week execution semantics.
+- `docs/architecture-decisions.md` — corrections and unresolved decisions.
+- `docs/integration-plan.md` — producer-consumer contract matrix and merge gates.
+- `docs/end-to-end-walkthrough.md` — numerically consistent two-week example with three districts and three hospitals.
+- `contracts/` — canonical typed interface specifications, examples and validation rules.
+- `docs/agent-prompts/` — five independent Kiro implementation prompts.
+- `docs/documentation-audit.md` — remaining risks and pass/fail checks.
+
+The team consists of:
+
+1. SEIR developer.
+2. FDNA developer.
+3. Data, accessibility and evaluation developer.
+4. Hospital state, allocation and scenario developer.
+5. Orchestration, Streamlit and integration developer.
+
+SEIR and FDNA code may already exist elsewhere. These developers will adapt their implementations to the final contracts; do not redesign shared interfaces around inaccessible code.
+
+## Verification
+
+Before marking documentation complete, trace one synthetic patient cohort across two weeks:
+
+district epidemic state → new admissions → candidate hospitals → provisional load → FDNA before → rerouting → committed admissions → FDNA after → scheduled discharges → next-week state.
+
+Every handoff must use a specified canonical type.
+
+For the walkthrough, verify all population and patient conservation equations numerically.
+
+No duplicated admissions, no unexplained negative occupancy, no capacity violations for newly accepted patients, and no ambiguous graph edge semantics are permitted.
+
+Produce a concise final report identifying what changed from the original blueprint and which decisions still need human approval.
+
+Stop after architecture documentation and contract verification. Do not begin parallel feature implementation until the architecture is approved.

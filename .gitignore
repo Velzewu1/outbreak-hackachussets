@@ -26,3 +26,12 @@ outputs/
 # Large/raw data stays local unless intentionally reviewed for commit
 data/raw/*
 !data/raw/.gitkeep
+# Allowlisted authorized public snapshots (~1 MB) so a fresh checkout reproduces
+# the offline real demo. Provenance/licenses/checksums in data/raw/MANIFEST.json.
+!data/raw/MANIFEST.json
+!data/raw/massgis-suffolk-hospitals.json
+!data/raw/massgis-suffolk-tracts-2020.geojson
+!data/raw/hhs-suffolk-historical-2020-2021.json
+
+# Generated evaluation/benchmark artifacts are reproducible; keep local.
+artifacts/

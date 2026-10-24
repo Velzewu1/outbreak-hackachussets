@@ -1,0 +1,26 @@
+# ResiliNet | Boston Hospital Cascade — pinned runtime + dev dependencies.
+# Versions pinned to the environment the project was built and tested against
+# (Python 3.12). Install: python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
+
+# Scientific core
+numpy==2.5.4
+scipy==1.18.1
+pandas==3.1.0
+shapely==2.2.0
+networkx==3.7
+
+# Config / validation
+pydantic==2.14.1
+PyYAML==6.0.3
+
+# App
+streamlit==1.66.1
+pydeck==0.9.3
+
+# Data acquisition (one-time prep; app runs offline from data/raw snapshots)
+requests==2.34.2
+
+# Dev / QA
+pytest==9.1.1
+ruff==0.17.2
+psutil==7.2.2

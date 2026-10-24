@@ -1,10 +1,10 @@
 """Smoke tests for the HTTP layer: every endpoint answers with the shapes the site reads.
 
-    pytest frontend/api
+pytest frontend/api
 """
+
 import pytest
 from fastapi.testclient import TestClient
-
 from main import SCENARIOS, app
 
 client = TestClient(app)
@@ -39,7 +39,9 @@ def test_every_scenario_runs(sid):
     assert len(r["epi"]["rates"]["r_eff"]) == days
     if SCENARIOS[sid]["kind"] == "system":
         s = r["system"]
-        assert len(s["occupancy_ward"]) == days and len(s["occupancy_ward"][0]) == len(s["hospitals"])
+        assert len(s["occupancy_ward"]) == days and len(s["occupancy_ward"][0]) == len(
+            s["hospitals"]
+        )
         assert len(s["access"][0]) == len(r["geo"]["patches"])
         assert r["geo"]["mappable"]
         assert len(r["geo"]["districts"]["features"]) == len(r["geo"]["patches"])
@@ -49,18 +51,37 @@ def test_every_scenario_runs(sid):
 
 def test_changes_apply():
     base = post("/api/run", {"scenario": "boston_city"})
-    hot = post("/api/run", {"scenario": "boston_city", "epi": {"disease.r0": 2.6, "sim.days": 90},
-                            "system": {"rerouting.occ_on": 0.9},
-                            "events": [{"node": "MGH.staff", "value": 20, "start": 10, "end": 50}]})
+    hot = post(
+        "/api/run",
+        {
+            "scenario": "boston_city",
+            "epi": {"disease.r0": 2.6, "sim.days": 90},
+            "system": {"rerouting.occ_on": 0.9},
+            "events": [{"node": "MGH.staff", "value": 20, "start": 10, "end": 50}],
+        },
+    )
     assert len(hot["epi"]["dates"]) == 90
     assert hot["epi"]["summary"]["attack_rate"] > base["epi"]["summary"]["attack_rate"]
-    assert hot["system"]["summary"]["hospital_days_on_diversion"] > base["system"]["summary"]["hospital_days_on_diversion"]
+    assert (
+        hot["system"]["summary"]["hospital_days_on_diversion"]
+        > base["system"]["summary"]["hospital_days_on_diversion"]
+    )
 
 
 def test_bad_changes_are_422():
-    assert client.post("/api/run", json={"scenario": "boston_city", "epi": {"disease.r0": -1}}).status_code == 422
-    assert client.post("/api/run", json={"scenario": "boston_city",
-                                         "events": [{"node": "nowhere", "value": 0}]}).status_code == 422
+    assert (
+        client.post(
+            "/api/run", json={"scenario": "boston_city", "epi": {"disease.r0": -1}}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/api/run",
+            json={"scenario": "boston_city", "events": [{"node": "nowhere", "value": 0}]},
+        ).status_code
+        == 422
+    )
 
 
 def test_ensemble_sensitivity_criticality_validation():
