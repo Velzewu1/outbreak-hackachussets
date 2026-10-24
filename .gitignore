@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments and secrets
+.venv/
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.DS_Store
+*.swp
+
+# Generated outputs
+.streamlit/secrets.toml
+artifacts/
+outputs/
+
+# Large/raw data stays local unless intentionally reviewed for commit
+data/raw/*
+!data/raw/.gitkeep
